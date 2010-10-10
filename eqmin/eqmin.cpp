@@ -32,7 +32,6 @@
 #include "_minimize_lbfgs.h"
 using namespace prgkern;
 
-#define _E(N, A, i, j)    (*(A + (i)*(N) + (j)))
 class v3dense
 {
 	double v_[3];
@@ -67,9 +66,8 @@ struct sGTO
 	double zeta;
 };
 
-//template <typename> class Basis_;
 
-/*template <>*/ class Basis_/*<sGTO>*/ : public std::map<std::string, sGTO>
+class Basis_ : public std::map<std::string, sGTO>
 {
 	typedef std::map<std::string, sGTO> _Base;
 
@@ -196,13 +194,13 @@ struct Atom
 */
 class Molecule
 {
-	typedef Basis_/*<sGTO>*/        _Basis;
+	typedef Basis_        _Basis;
 	typedef _Basis::value_type  _Orbital;
 	typedef Atom                _Atom;
 
 public:
 	std::vector<_Atom> atoms_; // array of atoms
-	Basis_/*<sGTO>*/ basis_; // basis set
+	Basis_ basis_; // basis set
 	double total_charge_; // total charge of system
 	double energy_; // electrostatic contribution to the potential energy
 	int number_of_bonds;
@@ -245,7 +243,7 @@ public:
 	/**
 	* @brief populates integral matrices
 	*/
-	void make_coulomb_integrals(std::vector<double> &coulomb_matrix);
+	void make_coulomb_integrals();
 	std::pair<int, int> get_bond_by_index(int bondIndex);
 	void make_topology_matrix();
 	void make_geometric_matrix();
@@ -254,10 +252,14 @@ public:
 	unsigned get_atom_count() const { return atoms_.size(); }
 	const _Atom* get_atoms() const { return &atoms_[0]; }
 	_Atom* get_atoms() { return &atoms_[0]; }
-	std::vector<double> coulomb_;
-	std::vector<int> bonds;
-	std::vector<int> topology; //matrix A in article
-	std::vector<double> geometric; //matrix K in article
+	//std::vector<double> coulomb_;
+	mdense<double> coulomb_;
+	mdense<int> bonds;
+	//std::vector<int> bonds;
+	mdense<int> topology;
+	//std::vector<int> topology; //matrix A in article
+	mdense<double> geometric;
+	//std::vector<double> geometric; //matrix K in article
 };
 
 inline void Molecule::load(const char *filename)
@@ -284,7 +286,7 @@ inline void Molecule::load(const char *filename)
 		for (unsigned j=0; j<2; j++) symbol[j] = toupper(symbol[j]);
 		insert(std::string(symbol), v3dense(x, y, z));
 	}
-	bonds.resize(count*count);
+	bonds.resize(count, count);
 	for (unsigned i=0; i < count; i++)
 	{
 		for (unsigned j=0; j < count; j++)
@@ -293,7 +295,8 @@ inline void Molecule::load(const char *filename)
 			fscanf(file, "%d", &bondMark);
 			if (bondMark)
 			{
-				_E(count, &bonds[0], i, j) = bondMark;
+				bonds(i, j) = bondMark;
+//				_E(count, &bonds[0], i, j) = bondMark;
 				number_of_bonds++;
 			}
 		}
@@ -303,21 +306,21 @@ inline void Molecule::load(const char *filename)
 	fclose(file);
 	make_topology_matrix();
 	make_geometric_matrix();
-	make_coulomb_integrals(coulomb_);
+	make_coulomb_integrals();
 }
 inline void Molecule::make_topology_matrix()
 {
 	int numberOfAtoms = atoms_.size();
-	topology.resize(number_of_bonds * numberOfAtoms);
+	topology.resize(number_of_bonds, numberOfAtoms);
 	int bondIndex = 0;
 	for (int i=0; i < numberOfAtoms; i++)
 	{
 		for (int j=0; j < i; j++)
 		{
-			if (_E(numberOfAtoms, &bonds[0], i, j))
+			if (bonds(i,j))
 			{
-				_E(number_of_bonds, &topology[0], i, bondIndex) = 1;
-				_E(number_of_bonds, &topology[0], j, bondIndex) = -1;
+				topology(i,bondIndex) = 1;
+				topology(j,bondIndex) = -1;
 				bondIndex++;
 			}
 		}
@@ -330,7 +333,7 @@ inline std::pair<int, int> Molecule::get_bond_by_index(int bondIndex)
 	std::pair<int, int> ret = std::pair<int, int>(-1,-1);
 	for (int i = 0; i < numberOfAtoms; i++)
 	{
-		int isIncludeToBond = _E(number_of_bonds, &topology[0], i, bondIndex);
+		int isIncludeToBond = topology(i, bondIndex);
 		switch (isIncludeToBond) {
 			case 1:
 				ret.first = i;
@@ -345,20 +348,20 @@ inline std::pair<int, int> Molecule::get_bond_by_index(int bondIndex)
 }
 inline void Molecule::make_geometric_matrix()
 {
-	geometric.resize(number_of_bonds*number_of_bonds);
+	geometric.resize(number_of_bonds, number_of_bonds);
 	for (int i = 0; i < number_of_bonds; i++)
 	{
 		std::pair<int, int> bond = get_bond_by_index(i);
 		sGTO first_sGTO= basis_[atoms_[bond.first].symbol];
 		sGTO second_sGTO= basis_[atoms_[bond.second].symbol];
 		double r = distance1(atoms_[bond.first].X, atoms_[bond.second].X);
-		_E(number_of_bonds, &geometric[0], i, i) = basis_.overlap_integral(first_sGTO, second_sGTO, r);
+		geometric(i,i) = basis_.overlap_integral(first_sGTO, second_sGTO, r);
 	}
 }
-inline void Molecule::make_coulomb_integrals(std::vector<double> &coulomb_matrix)
+inline void Molecule::make_coulomb_integrals()
 {
 	unsigned n = atoms_.size();
-	if (coulomb_matrix.size() != n * n) coulomb_matrix.resize(n * n);
+	if (coulomb_.size() != n * n) coulomb_.resize(n, n);
 
 	for (unsigned i=0; i<n; i++)
 	{
@@ -368,11 +371,10 @@ inline void Molecule::make_coulomb_integrals(std::vector<double> &coulomb_matrix
 			const sGTO &sgto__= basis_[atoms_[j].symbol];
 			double r = distance1(atoms_[i].X, atoms_[j].X);
 			double s = basis_.coulomb_integral(sgto, sgto__, r);
-			_E(n, &coulomb_matrix[0], i, j) = s;
-			_E(n, &coulomb_matrix[0], j, i) = s;
+			coulomb_(i,j) = s;
+			coulomb_(j,i) = s;
 		}
-		_E(n, &coulomb_matrix[0], i, i) = atoms_[i].hardness;
-			// for the diagonal elements, use hardness
+		coulomb_(i,i) = atoms_[i].hardness;
 	}
 }
 
@@ -392,19 +394,16 @@ inline double Molecule::dU__dQ()
 	{
 		ch_ = atoms_[i].charge;
 		energy +=  ch_ * atoms_[i].electronegativity;
-		energy += 0.5 * ch_ * ch_ * _E(n, &coulomb_[0], i, i);
+		energy += 0.5 * ch_ * ch_ * coulomb_(i,i);
 		for (unsigned j=0; j<i; j++)
-			energy += ch_ * atoms_[j].charge * _E(n, &coulomb_[0], i, j);
+			energy += ch_ * atoms_[j].charge * coulomb_(i,j);
 	}
 
 	for (unsigned i=0; i<n; i++)
 	{
 		atoms_[i].du__dq = atoms_[i].electronegativity;
-		//
-		//atoms_[i].du__dq +=  atoms_[i].charge * _E(n, &coulomb_[0], i, i);
-		//
 		for (unsigned j=0; j<n; j++)
-			atoms_[i].du__dq += atoms_[j].charge * _E(n, &coulomb_[0], i, j);
+			atoms_[i].du__dq += atoms_[j].charge * coulomb_(i,j);
 	}
 
 	for (unsigned i=0; i<n-1; i++) // correction

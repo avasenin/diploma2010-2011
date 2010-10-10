@@ -26,14 +26,49 @@
 namespace prgkern
 {
 	template <typename T>
-	class mdense : private std::vector<T>
+	class mdense : public std::vector<T>
 	{
 		typedef std::vector<T> _Base;
 	public:
-		mdense(unsigned nn1, unsigned nn2) : _Base(nn1 * nn2), n2(nn2) {}
-		T &operator()(unsigned i1, unsigned i2)
-		{ return ((_Base&)(*this))[i1 * n2 + i2]; }
+		mdense(unsigned nn1 = 0, unsigned nn2 = 0) : _Base(nn1 * nn2), n2(nn2) {}
+		mdense(_Base const& src) : _Base(((_Base&)(src)).size()), n2(src.n2) { std::copy(src.begin(), src.end(), this->begin()); }
+		T &operator()(unsigned i1, unsigned i2) { return ((_Base&)(*this))[i1 * n2 + i2]; }
+		void resize(unsigned nn1, unsigned nn2) {  std::vector<T>::resize(nn1 * nn2); n2 = nn2;}
 		unsigned n2;
+		int get_max_width() { return this-> size() / n2; }
+		int get_max_height() { return n2;}
+		_Base invert_diagonal() {
+			_Base copy = *this;
+			invert(copy);
+			return copy;
+		}
+		_Base mul(_Base const& a, _Base const& b)
+		{
+			assert(a.get_max_height() == b.get_max_width());
+			mdense<T> result = mdense<T>(a.get_max_width(), b.get_max_height());
+			for (int i =0; i < a.get_max_width(); i++ )
+			{
+				for (int j=0; j < a.get_max_height(); j++)
+				{
+					for (int k=0; k < b.get_max_height; k++)
+					{
+						result(i,j) += a(i,j) * b(j,k);
+					}
+				}
+			}
+			return result;
+		}
+		_Base transpose()
+		{
+			mdense<T> result = mdense<T>(get_max_height(), get_max_width());
+			for (int i =0; i < get_max_width(); i++ )
+			{
+				for (int j=0; j < get_max_height(); j++)
+				{
+					result(j,i) = (*this)(i,j);
+				}
+			}
+		}
 	};
 	
 	/**
