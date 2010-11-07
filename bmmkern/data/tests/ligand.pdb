@@ -1,0 +1,16 @@
+MODEL 1
+HETATM    1 C    UNK     1      10.198  17.077  31.330
+HETATM    2 O    UNK     1      11.384  16.869  31.131
+HETATM    3 O    UNK     1       9.821  17.917  32.127
+HETATM    4 C    UNK     1       9.104  16.242  30.535
+HETATM    5 C    UNK     1       7.635  16.556  30.833
+HETATM    6 C    UNK     1       6.623  15.690  30.010
+HETATM    7 C    UNK     1       5.152  15.965  30.272
+HETATM    8 O    UNK     1       4.340  15.312  29.650
+HETATM    9 O    UNK     1       4.839  16.816  31.079
+HETATM   10 O    UNK     1       9.391  15.382  29.716
+HETATM   11 H    UNK     1       7.464  16.409  31.904
+HETATM   12 H    UNK     1       7.464  17.618  30.634
+HETATM   13 H    UNK     1       6.793  15.841  28.942
+HETATM   14 H    UNK     1       6.794  14.632  30.213
+ENDMDL

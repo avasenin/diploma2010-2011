@@ -1,0 +1,6 @@
+mol 1
+atom  1 - O  o -  1  0 0  0  1 2 s
+atom  2 - O  o -  0  0 0 -16.3224  1 1 s
+atom  3 - O  o -  1  0 0  3.3224  1 4 s
+atom  4 - O  o -  0  0 0  16.3224  1 3 s
+endmol 1
