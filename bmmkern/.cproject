@@ -52,7 +52,6 @@
 </toolChain>
 </folderInfo>
 <sourceEntries>
-<entry excluding="src/bmmkern.cpp" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 </sourceEntries>
 </configuration>
 </storageModule>
