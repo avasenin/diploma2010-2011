@@ -290,6 +290,22 @@ namespace molkern
 			}
 		}
 
+		unsigned read(_I2T<CHARGE_>, const real_t *charges, _Atom *atoms)
+		{
+			unsigned cnt = 0;
+			for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
+				cnt += molecules_[i]->read(CHARGE, charges + cnt, atoms + atom_start_[i]);
+			return cnt;
+		}
+
+		unsigned write(_I2T<DCHARGE_>, real_t *derivatives, const _Atom *atoms)
+		{
+			unsigned cnt = 0;
+			for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
+				cnt += molecules_[i]->write(DCHARGE, derivatives + cnt, atoms + atom_start_[i]);
+			return cnt;
+		}
+
 		unsigned read(_I2T<POSITION_>, const real_t *x, _Atom *atoms)
 		{
 			unsigned cnt = 0;

@@ -135,6 +135,13 @@ namespace molkern
 		/// текущее число степеней движения молекулы
 		unsigned count(_I2T<FREEDOM_>) const { return archetype_->count(FREEDOM, freedom_type_); }
 
+		template <typename _Atom> unsigned read(_I2T<CHARGE_>, const real_t *x, _Atom *atoms) const
+		{ return archetype_->read(CHARGE, x, freedom_type_, atoms); }
+
+		template <typename _Atom> unsigned write(_I2T<DCHARGE_>, real_t *g, const _Atom *atoms) const
+		{ return archetype_->write(DCHARGE, g, freedom_type_, atoms); }
+
+
 		template <typename _Atom> unsigned read(_I2T<POSITION_>, const real_t *x, _Atom *atoms) const
 		{ return archetype_->read(POSITION, x, freedom_type_, atoms); }
 

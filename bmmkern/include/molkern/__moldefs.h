@@ -214,6 +214,7 @@ namespace molkern
 		EXT_CONTACT_PREV_,
 		EXT_CONTACT_NEXT_,
 
+                DCHARGE_,            // du__dq
 		CHARGE_,             // заряд
 		MASS_,               // масса
 		TEMPERATURE_,        // температура ансамбля (K)
@@ -329,6 +330,7 @@ namespace molkern
 	DEFINE_TAG_CONST(ROOT_ROTAMER);
 
 	DEFINE_TAG_CONST(START_POSITION);
+	DEFINE_TAG_CONST(DCHARGE);
 	DEFINE_TAG_CONST(POSITION);
 	DEFINE_TAG_CONST(XPOSITION);
 	DEFINE_TAG_CONST(GPOSITION);
