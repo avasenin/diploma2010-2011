@@ -261,6 +261,7 @@ namespace molkern
 		FORMAT_HIN_,          // HIN file format
 		FORMAT_MOL2_,         // MOL2 file format
 		FORMAT_BMM_,          // формат пакета MOLKERN
+		FORMAT_VHIN_,          // формат пакета MOLKERN
 
 		VERLET_PAIR_,
 		RSKIN_,
@@ -338,6 +339,7 @@ namespace molkern
 	DEFINE_TAG_CONST(RESIDOME_AMBER);
 	DEFINE_TAG_CONST(FORMAT_UNKNOWN);
 	DEFINE_TAG_CONST(FORMAT_PDB);
+	DEFINE_TAG_CONST(FORMAT_VHIN);
 	DEFINE_TAG_CONST(FORMAT_HIN);
 	DEFINE_TAG_CONST(FORMAT_MOL2);
 	DEFINE_TAG_CONST(FORMAT_BMM);

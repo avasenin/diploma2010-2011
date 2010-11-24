@@ -149,6 +149,7 @@ namespace molkern
 		* @return полная энергия взаимодействия
 		*/
 		template <typename _Atom> _E(real_t) U(const _Atom *atoms, bool make_print=YES_PRINT) const;
+		template <typename _Atom> _E(real_t) dU__dQ(_Atom *atoms) const;
 		template <typename _Atom> _E(real_t) dU__dX(_Atom *atoms) const;
 
 		/**
@@ -210,6 +211,14 @@ namespace molkern
 	}
 
 	TEMPLATE_HEADER
+	template <typename _Atom>
+	INLINE _E(real_t) Molecule_<TEMPLATE_ARG>
+	::dU__dQ(_Atom *atoms) const
+	{
+            return archetype_->dU__dQ(atoms);
+	}
+
+        TEMPLATE_HEADER
 	template <typename _Atom>
 	INLINE _E(real_t) Molecule_<TEMPLATE_ARG>
 	::dU__dX(_Atom *atoms) const

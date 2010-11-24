@@ -125,6 +125,10 @@ namespace molkern
 		/// заряд ядра
 		unsigned nuclear;
 
+                real_t electronegativity;
+                real_t hardness;
+                real_t gaussian_exponent;
+
 		//..............................SHARE FIELDS...............................
 
 		//__________________________HIN FORMAT FIELDS______________________________
@@ -169,7 +173,7 @@ namespace molkern
 
 		Atomdata_() : fftype("  "), name("  "), sid(0), charge(0.), radius(0.),
 			mass(0.), nuclear(0), nbond(0), pdb_name("   "), altloc(' '), residue("UNK"),
-			chain(' '), res_seq(1), connect_data(1), insert_data(0)
+			chain(' '), res_seq(1), connect_data(1), insert_data(0), electronegativity(0)
 				// вставили контакт с самим собой для действительных атомов
 		{}
 
@@ -323,6 +327,31 @@ namespace molkern
 
 		return CODE_SUCCESS;
 	}
+
+inline int extract_object(_I2T<FORMAT_VHIN_>, Atomdata_ &atomdata, std::ifstream *src)
+	{
+		// atom 1 - C CT - 0.1801 18.35900 26.86900 52.95500 2 2 s 9 s 5.343 10.126 0.20688
+
+		char skip[256]; // buffer to skip unused data
+		char name[MAX_ATOM_NAME];
+
+		*src >> skip; if (::strncmp(skip, "atom", 4) != 0)
+			return CODE_ERROR; // test file line
+
+		*src >> atomdata.sid >> skip;
+		*src >> name; atomdata.name = name;
+		*src >> name; atomdata.fftype = name;
+		*src >> skip >> atomdata.charge
+			>> atomdata.X[0] >> atomdata.X[1] >> atomdata.X[2];
+		*src >> atomdata.nbond;
+		for (unsigned i=0; i<atomdata.nbond; i++)
+			*src >> atomdata.nid[i] >> atomdata.nvalency[i];
+                *src >> atomdata.electronegativity;
+                *src >> atomdata.hardness;
+                *src >> atomdata.gaussian_exponent;
+		return CODE_SUCCESS;
+	}
+
 
 	/**
 	* @brief extracts atomdata from FORMAT_HIN_ file stream

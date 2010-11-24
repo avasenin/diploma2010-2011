@@ -98,6 +98,7 @@ namespace molkern
     */
     bool load(const std::string &filename, char altpos='A');
     bool load(_I2T<FORMAT_PDB_>, std::ifstream &file, char altpos='A');
+    bool load(_I2T<FORMAT_VHIN_>, std::ifstream &file, char altpos='A');
     bool load(_I2T<FORMAT_HIN_>, std::ifstream &file, char altpos='A');
     bool load(_I2T<FORMAT_MOL2_>,std::ifstream &file, char altpos='A');
     bool load(_I2T<FORMAT_BMM_>, std::ifstream &file, char altpos='A');
@@ -207,6 +208,8 @@ namespace molkern
 
     template <typename _Atom, typename _Iterator>
     _E(real_t) dU__dX(_I2T<PAIR14_>, _Atom *atoms, _Iterator start, _Iterator end) const;
+    template <typename _Atom, typename _Iterator>
+    _E(real_t) dU__dQ(_Atom *atoms) const;
 
     /**           ФУНКЦИИ ДЛЯ ПОЛУЧЕНИЯ ИНФОРМАЦИИ О МОЛЕКУЛЕ
     *  Данные функции используют для получения разнообразной информации
@@ -665,6 +668,7 @@ namespace molkern
     *  что затрудняет для пользователя поиск нужных атомов в исходном файле.
     */
     bool build_(_I2T<FORMAT_PDB_  >, int pH=NORMAL_PH_WATER);
+    bool build_(_I2T<FORMAT_VHIN_  >, int pH=NORMAL_PH_WATER);
     bool build_(_I2T<FORMAT_HIN_  >, int pH=NORMAL_PH_WATER);
     bool build_(_I2T<FORMAT_MOL2_ >, int pH=NORMAL_PH_WATER);
     bool build_(_I2T<FORMAT_BMM_  >, int pH=NORMAL_PH_WATER);
@@ -855,6 +859,9 @@ namespace molkern
     if (ext == _S(".hin") && load(_I2T<FORMAT_HIN_>(), file))
       BUILD_AND_RETURN_TRUE(FORMAT_HIN_);
 
+    if (ext == _S(".vhin") && load(_I2T<FORMAT_VHIN_>(), file))
+      BUILD_AND_RETURN_TRUE(FORMAT_VHIN_);
+
     if (ext == _S(".mol2") && load(_I2T<FORMAT_MOL2_>(), file))
       BUILD_AND_RETURN_TRUE(FORMAT_MOL2_);
 
@@ -902,6 +909,29 @@ namespace molkern
     atomdata_.reserve(DEFAULT_HIN_ATOM_COUNT);
     _Atomdata atomdata;
     while (extract_object(_I2T<FORMAT_HIN_>(), atomdata, &file) == CODE_SUCCESS)
+      atomdata_.push_back(atomdata);
+
+    return true;
+  }
+
+  TEMPLATE_HEADER
+  INLINE bool Archetype_<TEMPLATE_ARG>
+  ::load(_I2T<FORMAT_VHIN_>, std::ifstream &file, char)
+  {
+    format_ = FORMAT_VHIN_;
+
+    const int DEFAULT_HIN_ATOM_COUNT = 200;
+    char skip[256]; skip[0] = 0;
+    while (::strncmp(skip, "mol", 3) != 0)
+    {
+      file.getline(skip, 256);
+      if (file.eof()) return false;
+    }
+    if (skip[3] != '\0') molname_ = _S(&skip[4]);
+
+    atomdata_.reserve(DEFAULT_HIN_ATOM_COUNT);
+    _Atomdata atomdata;
+    while (extract_object(_I2T<FORMAT_VHIN_>(), atomdata, &file) == CODE_SUCCESS)
       atomdata_.push_back(atomdata);
 
     return true;
@@ -1144,6 +1174,7 @@ namespace molkern
     if (ext == _S(".pdb") || ext == _S(".ent"))
       count = save(_I2T<FORMAT_PDB_> (), file, atoms, prn_hydrogens);
     else if (ext == _S(".hin") ) count = save(_I2T<FORMAT_HIN_> (), file, atoms, prn_hydrogens);
+    else if (ext == _S(".vhin") ) count = save(_I2T<FORMAT_HIN_> (), file, atoms, prn_hydrogens);
     else if (ext == _S(".mol2")) count = save(_I2T<FORMAT_MOL2_>(), file, atoms, prn_hydrogens);
     else if (ext == _S(".bmm") ) count = save(_I2T<FORMAT_BMM_> (), file, atoms, prn_hydrogens);
 
@@ -1260,6 +1291,7 @@ namespace molkern
     switch (format_)
     {
     case FORMAT_PDB_  : build_(FORMAT_PDB,  pH); break;
+    case FORMAT_VHIN_  : build_(FORMAT_VHIN,  pH); break;
     case FORMAT_HIN_  : build_(FORMAT_HIN,  pH); break;
     case FORMAT_MOL2_ : build_(FORMAT_MOL2, pH); break;
     case FORMAT_BMM_  : build_(FORMAT_BMM,  pH); break;
@@ -1375,6 +1407,14 @@ namespace molkern
     }
 
     return true;
+  }
+
+  TEMPLATE_HEADER
+  INLINE bool Archetype_<TEMPLATE_ARG>
+  ::build_(_I2T<FORMAT_VHIN_>, int)
+  {
+    return build_(FORMAT_HIN);
+    // построение полностью идентично
   }
 
   TEMPLATE_HEADER
@@ -3307,24 +3347,46 @@ namespace molkern
 
     return coul_energy + vdw__energy;
   }
-/*
+
   TEMPLATE_HEADER
   template <typename _Atom, typename _Iterator>
   inline _E(real_t) Archetype_<TEMPLATE_ARG>
-  ::dU__dQ(_Atom *atoms, _Iterator start, _Iterator end) const
+  ::dU__dQ(_Atom *atoms) const
   {
-    unsigned int numberi_of_atoms = atomdata_.size();
+    unsigned int number_of_atoms = atomdata_.size();
+    _E(real_t) total_charge = 0.;
     for (unsigned i = 0; i < number_of_atoms - 1; i++)
     {
       total_charge += atoms[i].charge;
     }
-    atoms[i].charge = -total_
-    for (; start != end; start++)
+    atoms[number_of_atoms - 1].charge = -total_charge;
+    _E(real_t) total_energy = 0;
+    for (int i=0; i < number_of_atoms; i++)
     {
-      
+      _E(real_t) charge = atoms[i].charge;
+      total_energy += charge * atoms[i].atomdata->electronegativity;
+//TODO coulomb
+      total_energy += 0.5 * charge * charge * /*coulomb(i,j)*/1.;
+      for (unsigned j=0; j < i; j++)
+      {
+        total_energy += charge * atoms[j].charge * /*coulomb(i,j)*/1.;
+      }
     }
+    for (unsigned i=0; i < number_of_atoms; i++)
+    {
+      atoms[i].du__dq = atoms[i].electronegativity;
+      for (unsigned j=0; j < number_of_atoms; j++)
+      {
+        atoms[i].du__dq += atoms[j].charge * /*coulomb(i,j)*/ 1.0;
+      }
+    }
+    for (unsigned i=0; i < number_of_atoms; i++)
+    {
+      atoms[i].du__dq -= atoms[number_of_atoms - 1].du__dq;
+    }
+    return total_energy;
   }
-*/
+
   TEMPLATE_HEADER
   template <typename _Atom, typename _Iterator>
   inline _E(real_t) Archetype_<TEMPLATE_ARG>

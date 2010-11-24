@@ -69,7 +69,7 @@ namespace molkern
 			real_t eps; ///< параметр LJ 6-12 + 1-4 взаимодействия
 			unsigned_t connect_data; ///< таблица коннектов атома
 			unsigned_t insert_data; ///< тип вставки атома
-
+                        real_t du__dq;
 			vector_t V; ///< скорость атома
 				// поле V описывает точку в конфигурационном пространстве {X,V}
 			vector_t F; ///< частичные силы от невалентных взаимодействий
@@ -1028,6 +1028,19 @@ namespace molkern
 	}
 
 	TEMPLATE_HEADER
+	INLINE _E(real_t) Complex_<TEMPLATE_ARG>
+	::dU__dQ()
+	{
+		_Atom *atoms__ = &atoms_[0];
+		//-------------------------------------------------------------------------
+		//                             счет
+		//-------------------------------------------------------------------------
+		for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
+			energy += molecules_[i]->dU__dQ(atoms__ + atom_start_[i]);
+		return energy;
+	}
+
+        TEMPLATE_HEADER
 	INLINE _E(real_t) Complex_<TEMPLATE_ARG>
 	::dU__dX()
 	{
