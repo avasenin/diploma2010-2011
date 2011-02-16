@@ -172,8 +172,8 @@ namespace molkern
 		unsigned_t insert_data; // тип вставки
 
 		Atomdata_() : fftype("  "), name("  "), sid(0), charge(0.), radius(0.),
-			mass(0.), nuclear(0), nbond(0), pdb_name("   "), altloc(' '), residue("UNK"),
-			chain(' '), res_seq(1), connect_data(1), insert_data(0), electronegativity(0)
+			mass(0.), nuclear(0), electronegativity(0), nbond(0), pdb_name("   "), altloc(' '), residue("UNK"),
+			chain(' '), res_seq(1), connect_data(1),  insert_data(0)
 				// вставили контакт с самим собой для действительных атомов
 		{}
 

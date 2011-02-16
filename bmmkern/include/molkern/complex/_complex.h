@@ -260,6 +260,7 @@ namespace molkern
 		*/
 		_E(real_t) U(bool make_print=YES_PRINT) const;
 		_E(real_t) dU__dX();
+                _E(real_t) dU__dQ(mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients);
 		_E(real_t) dU__dX(_I2T<POSITION_>);
 
 		/**
@@ -1045,14 +1046,15 @@ namespace molkern
 
 	TEMPLATE_HEADER
 	INLINE _E(real_t) Complex_<TEMPLATE_ARG>
-	::dU__dQ()
+	::dU__dQ(mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients)
 	{
 		_Atom *atoms__ = &atoms_[0];
 		//-------------------------------------------------------------------------
 		//                             счет
 		//-------------------------------------------------------------------------
+                _E(real_t) energy = 0.;
 		for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
-			energy += molecules_[i]->dU__dQ(atoms__ + atom_start_[i]);
+			energy += molecules_[i]->dU__dQ(atoms__ + atom_start_[i], coefficients);
 		return energy;
 	}
 

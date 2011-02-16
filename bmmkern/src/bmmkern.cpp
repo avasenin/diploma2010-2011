@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
 		complex.U();
 
 		Descriptor_<OPTIMIZER_> desc(config); // загрузим описание оптимизатора
-		Optimizer_<LMBFGS_> optimizer; // инициализируем оптимизатор
+		ChargeOptimizer_<LMBFGS_> optimizer; // инициализируем оптимизатор
 
 		// выполним оптимизацию
 		optimizer(&complex, desc);

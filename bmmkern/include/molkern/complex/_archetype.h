@@ -15,7 +15,7 @@
 #include "molkern/complex/_region.h"
 #include "molkern/complex/_geom_tool.h"
 #include "molkern/complex/_protonization.h"
-
+#include "molkern/complex/_coulomb_params.h"
 namespace molkern
 {
   using namespace prgkern;
@@ -208,8 +208,9 @@ namespace molkern
 
     template <typename _Atom, typename _Iterator>
     _E(real_t) dU__dX(_I2T<PAIR14_>, _Atom *atoms, _Iterator start, _Iterator end) const;
-    template <typename _Atom, typename _Iterator>
-    _E(real_t) dU__dQ(_Atom *atoms) const;
+
+    template <typename _Atom>
+    _E(real_t) dU__dQ(_Atom *atoms, mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients) const;
 
     /**           ФУНКЦИИ ДЛЯ ПОЛУЧЕНИЯ ИНФОРМАЦИИ О МОЛЕКУЛЕ
     *  Данные функции используют для получения разнообразной информации
@@ -338,6 +339,28 @@ namespace molkern
     }
 
     template <typename _Atom> unsigned
+    read(_I2T<CHARGE_>, const real_t *x, _Atom *atoms) const
+    {
+      unsigned number_of_atoms = count(ATOM);
+      for (unsigned i=0; i<number_of_atoms; i++)
+      {
+        atoms[i].charge = x[i];
+      }
+      return number_of_atoms;
+    }
+
+    template <typename _Atom> unsigned
+    write(_I2T<DCHARGE_>, real_t *x, const _Atom *atoms) const
+    {
+      unsigned number_of_atoms = count(ATOM);
+      for (unsigned i=0; i<number_of_atoms; i++)
+      {
+        x[i] = atoms[i].du__dq;
+      }
+      return number_of_atoms;
+    }
+
+    template <typename _Atom> unsigned
     read(_I2T<POSITION_>, const real_t *x, unsigned freedom_type, _Atom *atoms) const
     {
       unsigned cnt = 0; bool use_atomdata = true;
@@ -355,6 +378,7 @@ namespace molkern
       }
       return cnt;
     }
+
 
     template <typename _Atom> unsigned
     write(_I2T<GRADIENT_>, real_t *g, unsigned freedom_type, const _Atom *atoms) const
@@ -3349,9 +3373,9 @@ namespace molkern
   }
 
   TEMPLATE_HEADER
-  template <typename _Atom, typename _Iterator>
+  template <typename _Atom>
   inline _E(real_t) Archetype_<TEMPLATE_ARG>
-  ::dU__dQ(_Atom *atoms) const
+  ::dU__dQ(_Atom *atoms, mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients) const
   {
     unsigned int number_of_atoms = atomdata_.size();
     _E(real_t) total_charge = 0.;
@@ -3361,23 +3385,25 @@ namespace molkern
     }
     atoms[number_of_atoms - 1].charge = -total_charge;
     _E(real_t) total_energy = 0;
-    for (int i=0; i < number_of_atoms; i++)
+    for (unsigned i=0; i < number_of_atoms; i++)
     {
       _E(real_t) charge = atoms[i].charge;
-      total_energy += charge * atoms[i].atomdata->electronegativity;
-//TODO coulomb
-      total_energy += 0.5 * charge * charge * /*coulomb(i,j)*/1.;
+      double electronegativity = RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).electronegativity;
+      total_energy += charge * electronegativity;
+      total_energy += 0.5 * charge * charge * (*coefficients)(i,i);
       for (unsigned j=0; j < i; j++)
       {
-        total_energy += charge * atoms[j].charge * /*coulomb(i,j)*/1.;
+        real_t coulomb = CoulombParams::instance()->get(atoms[i], atoms[j]);
+        total_energy += charge * atoms[j].charge * coulomb;
       }
     }
     for (unsigned i=0; i < number_of_atoms; i++)
     {
-      atoms[i].du__dq = atoms[i].electronegativity;
+      double electronegativity = RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).electronegativity;
+      atoms[i].du__dq = electronegativity;
       for (unsigned j=0; j < number_of_atoms; j++)
       {
-        atoms[i].du__dq += atoms[j].charge * /*coulomb(i,j)*/ 1.0;
+        atoms[i].du__dq += atoms[j].charge * (*coefficients)(i,j);
       }
     }
     for (unsigned i=0; i < number_of_atoms; i++)

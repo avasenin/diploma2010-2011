@@ -30,4 +30,6 @@ namespace molkern
 
 	unsigned global_thread_count; // число запущенных процессов
 	long long unsigned global_pair=0;
+	RappleGoddardParams* RappleGoddardParams::s_instance = NULL;
+	CoulombParams* CoulombParams::s_instance = NULL;
 };
