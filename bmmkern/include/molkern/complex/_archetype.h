@@ -210,7 +210,7 @@ namespace molkern
     _E(real_t) dU__dX(_I2T<PAIR14_>, _Atom *atoms, _Iterator start, _Iterator end) const;
 
     template <typename _Atom>
-    _E(real_t) dU__dQ(_Atom *atoms, mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients) const;
+    _E(real_t) dU__dQ(_Atom *atoms) const;
 
     /**           ФУНКЦИИ ДЛЯ ПОЛУЧЕНИЯ ИНФОРМАЦИИ О МОЛЕКУЛЕ
     *  Данные функции используют для получения разнообразной информации
@@ -3375,7 +3375,7 @@ namespace molkern
   TEMPLATE_HEADER
   template <typename _Atom>
   inline _E(real_t) Archetype_<TEMPLATE_ARG>
-  ::dU__dQ(_Atom *atoms, mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients) const
+  ::dU__dQ(_Atom *atoms) const
   {
     unsigned int number_of_atoms = atomdata_.size();
     _E(real_t) total_charge = 0.;
@@ -3390,7 +3390,7 @@ namespace molkern
       _E(real_t) charge = atoms[i].charge;
       double electronegativity = RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).electronegativity;
       total_energy += charge * electronegativity;
-      total_energy += 0.5 * charge * charge * (*coefficients)(i,i);
+      total_energy += 0.5 * charge * charge * CoulombParams::instance()->get(atoms[i], atoms[i]);
       for (unsigned j=0; j < i; j++)
       {
         real_t coulomb = CoulombParams::instance()->get(atoms[i], atoms[j]);
@@ -3403,10 +3403,11 @@ namespace molkern
       atoms[i].du__dq = electronegativity;
       for (unsigned j=0; j < number_of_atoms; j++)
       {
-        atoms[i].du__dq += atoms[j].charge * (*coefficients)(i,j);
+        real_t coulomb = CoulombParams::instance()->get(atoms[i], atoms[j]);
+        atoms[i].du__dq += atoms[j].charge * coulomb;
       }
     }
-    for (unsigned i=0; i < number_of_atoms; i++)
+    for (unsigned i=0; i < number_of_atoms - 1; i++)
     {
       atoms[i].du__dq -= atoms[number_of_atoms - 1].du__dq;
     }

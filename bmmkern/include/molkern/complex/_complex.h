@@ -260,7 +260,7 @@ namespace molkern
 		*/
 		_E(real_t) U(bool make_print=YES_PRINT) const;
 		_E(real_t) dU__dX();
-                _E(real_t) dU__dQ(mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients);
+                _E(real_t) dU__dQ();
 		_E(real_t) dU__dX(_I2T<POSITION_>);
 
 		/**
@@ -1046,17 +1046,46 @@ namespace molkern
 
 	TEMPLATE_HEADER
 	INLINE _E(real_t) Complex_<TEMPLATE_ARG>
-	::dU__dQ(mdense_<UNLIMITED_, UNLIMITED_, real_t>* coefficients)
+	::dU__dQ()
 	{
-		_Atom *atoms__ = &atoms_[0];
-		//-------------------------------------------------------------------------
-		//                             счет
-		//-------------------------------------------------------------------------
-                _E(real_t) energy = 0.;
-		for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
-			energy += molecules_[i]->dU__dQ(atoms__ + atom_start_[i], coefficients);
-		return energy;
-	}
+          _Atom *atoms__ = &atoms_[0];
+          _E(real_t) energy = 0.;
+          for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
+          {
+            energy += molecules_[i]->dU__dQ(atoms__ + atom_start_[i]);
+          }
+          for (unsigned i=0; i < molecules_.size(); i++)
+          {
+            unsigned atomsCountInMoleculeI = (*molecules_[i])->count(ATOM);
+            _Atom* atomsI = atoms__+atom_start_[i]
+            for (unsigned j=0; j < molecules_.size(); j++)
+            {
+              unsigned atomsCountInMoleculeJ = (*molecules_[j])->count(ATOM);
+              _Atom* atomsJ = atoms__+atom_start_[j];
+              _E(real_t) du__dq = 0.;
+              for (int atomIIndex = 0; atomIIndex < atomsCountInMoleculeI; atomIIndex++)
+              {
+                du__dq = 0.;
+                _Atom currentAtomI = atomsI[atomIIndex];
+                for (int atomJIndex = 0; atomJIndex < atomsCountInMoleculeJ; atomJIndex++)
+                {
+                  _Atom currentAtomJ = atomsJ[atomJIndex];
+                  real_t coulomb = CoulombParams::instance()->get(currentAtomI, currentAtomJ);
+                  energy += currentAtomI.charge * currentAtomJ.charge * coulomb;
+                  du__dq += currentAtomJ.charge * coulomb;
+                }
+                currentAtomI.du__dq += du__dq
+              }
+              //correction du__dq contains atom[n-1].du__dq
+              for (int atomIIndex = 0; atomIIndex < atomsCountInMoleculeI - 1; atomIIndex++)
+              {
+                _Atom currentAtomI = atomsI[atomIIndex];
+                currentAtomI.du__dq -= du__dq;
+              }
+            }
+          }
+          return energy;
+        }
 
         TEMPLATE_HEADER
 	INLINE _E(real_t) Complex_<TEMPLATE_ARG>

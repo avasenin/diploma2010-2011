@@ -19,38 +19,12 @@ namespace molkern
     struct ChargeOptimizerParams
     {
       void* complex;
-      mdense_<UNLIMITED_,UNLIMITED_,real_t>* coulomb;
     };
   private:
     std::vector<real_t> m_aCharges, m_aDerivatives;
     mdense_<UNLIMITED_,UNLIMITED_,real_t> m_coulomb;
     Basis_ m_basis;
-    template<typename LPComplex>
-    inline void build_coulomb_integrals(LPComplex *complex)
-    {
-      typedef typename LPComplex::atom_type _Atom;
-      _Atom *atoms = complex->get(ATOM);
-      unsigned number_of_atoms = complex->count(ATOM);
-      if (m_coulomb.size() != number_of_atoms * number_of_atoms)
-      {
-        m_coulomb.resize(number_of_atoms, number_of_atoms);
-      }
-      for (unsigned i=0; i<number_of_atoms; i++)
-      {
-        const sGTO &sgto_from_first_atom= m_basis[make_string(atoms[i].atomdata->name)];
-        for (unsigned j=0; j<i; j++)
-        {
-          const sGTO &sgto_from_second_atom= m_basis[make_string(atoms[j].atomdata->name)];
-          double r = distance1(atoms[i].atomdata->X, atoms[j].atomdata->X);
-          double s = m_basis.coulomb_integral(sgto_from_first_atom, sgto_from_second_atom, r);
-          m_coulomb(i,j) = s;
-          m_coulomb(j,i) = s;
-        }
-        double hardness = RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).hardness;
-        m_coulomb(i,i) = hardness;
-      }
-    }
-  public:
+    public:
     template <typename LPComplex, typename Param>
     real_t operator()(LPComplex *complex, const Param &param)
     {
@@ -66,8 +40,8 @@ namespace molkern
         double gaussian_exponent = RappleGoddardParams::instance()->find(atom_symbol).gaussian_exponent;
         m_basis.insert(Basis_::value_type(atom_symbol, gaussian_exponent));
       }
-      CoulombParams.build(m_basis);
-      ChargeOptimizerParams params = {(void*) complex, &m_coulomb};
+      CoulombParams::build(m_basis);
+      ChargeOptimizerParams params = {(void*) complex};
       energy = Minimizer_<OPTIMIZER_TYPE>::operator()(
         &dU__dQ<LPComplex>, (void*)&params,
         number_of_atoms - 1, &m_aCharges[0], &m_aDerivatives[0], param.maxiter,
@@ -93,7 +67,7 @@ namespace molkern
       _Atom *atoms = complex->get(ATOM);
 
       complex->read(CHARGE, charges, atoms);
-      real_t energy = complex->dU__dQ(casted_params->coulomb);
+      real_t energy = complex->dU__dQ();
       complex->write(DCHARGE, derivatives, atoms);
 
       return energy;

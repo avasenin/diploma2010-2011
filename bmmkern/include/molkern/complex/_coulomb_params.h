@@ -108,7 +108,7 @@ namespace molkern
         double r = distance1(atomA.atomdata->X, atomB.atomdata->X);
         if (0 == r)
         {
-          return RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).hardness;
+          return RappleGoddardParams::instance()->find(make_string(atomA.atomdata->name)).hardness;
         }
         const sGTO &sgto_from_first_atom= m_basis[make_string(atomA.atomdata->name)];
         const sGTO &sgto_from_second_atom= m_basis[make_string(atomB.atomdata->name)];
