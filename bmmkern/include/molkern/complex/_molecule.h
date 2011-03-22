@@ -25,6 +25,7 @@ namespace molkern
 	template <typename _Archetype>
 	class Molecule_
 	{
+
 		typedef typename _Archetype::atomdata_type  _Atomdata;
 		typedef typename _Archetype::rotamer_type   _Rotamer;
 		typedef typename _Archetype::edge_type      _Edge;
@@ -52,6 +53,7 @@ namespace molkern
 
 		enum { dimension = 3 };
 		typedef real_t  real_type;
+                typedef _Archetype archetype_type;
 
 		Molecule_(const _Archetype *archetype, unsigned freedom_type)
 		: archetype_(archetype), freedom_type_(freedom_type), calc_type_(CALC_NOTHING_)
@@ -170,6 +172,7 @@ namespace molkern
 		*/
 		const _Archetype *operator->() const { return archetype_; }
 
+		const _Archetype *archetype() const { return archetype_; }
 	};
 
 	#define TEMPLATE_HEADER  template <typename _Archetype>

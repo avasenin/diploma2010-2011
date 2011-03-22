@@ -48,6 +48,13 @@ namespace prgkern
 	#undef  __LOCATE__
 	#define __LOCATE__  _S(__FILE__) +_S("(") + _S(itoa(__LINE__)) + _S(") ")
 
+	#define PRINT(msg) \
+	{ \
+		COUT_MUTEX_LOCK \
+		std::cout << msg; \
+		COUT_MUTEX_UNLOCK \
+	}
+
 	#define PRINT_MESSAGE(msg) \
 	{ \
 		COUT_MUTEX_LOCK \

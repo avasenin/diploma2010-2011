@@ -1,0 +1,4 @@
+#Mon Feb 15 17:14:25 ALMT 2010
+eclipse.preferences.version=1
+environment/project/cdt.managedbuild.config.gnu.exe.debug.1900167467=<?xml version\="1.0" encoding\="UTF-8" standalone\="no"?>\n<environment append\="true" appendContributed\="true">\n<variable delimiter\=";" name\="BMMKERN" operation\="append" value\="/home/fomin/projects/bmmkern/data/"/>\n</environment>\n
+environment/project/cdt.managedbuild.config.gnu.exe.release.1624486695=<?xml version\="1.0" encoding\="UTF-8" standalone\="no"?>\n<environment append\="true" appendContributed\="true"/>\n

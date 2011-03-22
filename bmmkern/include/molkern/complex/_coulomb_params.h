@@ -24,11 +24,12 @@ namespace molkern
     double Coulomn_Integral_Distance_Threshold;
     double Overlap_Integral_Distance_Threshold;
     double smallest_gaussian_exponent;
-
+    int counter;
+    int counter_;
   public:
     typedef std::map<std::string, sGTO>::value_type  value_type;
 
-    Basis_() : smallest_gaussian_exponent(1.e20) {}
+    Basis_() : smallest_gaussian_exponent(1.e20), counter(0), counter_(0) {}
 
     void insert(const value_type &val)
     {
@@ -58,7 +59,8 @@ namespace molkern
     */
     double coulomb_integral(sGTO a, sGTO b, double R)
     {
-      if (R > Coulomn_Integral_Distance_Threshold) return 1. / R;
+      if (R > 4 * Coulomn_Integral_Distance_Threshold) {counter_++; return 0;}
+      if (R > Coulomn_Integral_Distance_Threshold) {counter++; return 1. / R;}
       double p = sqrt(a.zeta * b.zeta / (a.zeta + b.zeta));
       return erf(p * R) / R;
     }
@@ -73,7 +75,7 @@ namespace molkern
     */
     double overlap_integral(sGTO a, sGTO b, double R)
     {
-      if (R > Overlap_Integral_Distance_Threshold) return 0.;
+      if (R > Overlap_Integral_Distance_Threshold) {counter_++; return 0;}
       double p = a.zeta + b.zeta;
       double q = a.zeta * b.zeta / p;
       return pow(4 * q / p, 0.75) * exp(-q * R * R);

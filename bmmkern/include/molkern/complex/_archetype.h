@@ -1334,7 +1334,7 @@ namespace molkern
       build_components |= BUILD_CHAINS;
     }
 
-    if (build_components)
+   if (build_components)
     {
       _S msg = _S("Building of model `") + molname_ + _S("` is started ...");
       PRINT_MESSAGE(msg);

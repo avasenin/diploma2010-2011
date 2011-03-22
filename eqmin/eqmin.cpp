@@ -304,8 +304,8 @@ inline void Molecule::load(const char *filename)
 	//delete symmetric bounds
 	number_of_bonds /= 2;
 	fclose(file);
-	make_topology_matrix();
-	make_geometric_matrix();
+	//make_topology_matrix();
+	//make_geometric_matrix();
 	make_coulomb_integrals();
 }
 inline void Molecule::make_topology_matrix()
@@ -458,7 +458,10 @@ public:
 		n = molecule->get_atom_count() - 1;
 		for (unsigned i=0; i<n; i++) atoms[i].charge = q[i];
 		double energy = molecule->dU__dQ();
-		for (unsigned i=0; i<n; i++) du__dq[i] =atoms[i].du__dq;
+		for (unsigned i=0; i<n; i++)
+			{
+			du__dq[i] =atoms[i].du__dq;
+			}
 
 		return energy;
 	}

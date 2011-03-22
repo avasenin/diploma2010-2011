@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
 		_S filename = config.work_dir + desc.name;
 
 		// загрузим архетип молекулы в регион
-		complex.load(MOLECULE, filename, desc.freedom_type, desc.count, desc.altpos);
+		complex.load(MOLECULE, filename, desc.freedom_type | YES_ATOM_, desc.count, desc.altpos);
 	}
 
 	// загрузим архетип воды
@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 
 	//----------------------------------------------------------------------------
 	//                              оптимизация
-	//----------------------------------------------------------------------------
+	//---------------------------------------------------------------------------
 	if (config.iterations >= 0)
 	{
 		// распечатаем начальное состояние для контроля построения

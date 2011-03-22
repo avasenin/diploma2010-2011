@@ -45,6 +45,7 @@ namespace molkern
 		typedef Interaction                                 _Interaction;
 		typedef typename _Archetype::atom_type              _Atomdata;
 		typedef typename _Archetype::chain_type             _Chain;
+                typedef typename _Archetype::bond_type              _Bond;
 		typedef typename _Archetype::rotamer_type           _Rotamer;
 		typedef std::pair<unsigned, unsigned>               _Pair;
 		typedef Box_<3, real_t>                             _Box;
@@ -162,8 +163,10 @@ namespace molkern
 		enum { dimension = 3 };
 
 		typedef _Atom           atom_type;
+                typedef _Molecule       molecule_type;
 		typedef _LJAtom         ljatom_type;
 		typedef real_t          real_type;
+		typedef _Bond           bond_type;
 		typedef _Archetype      archetype_type;
 		typedef _Chain          chain_type;
 		typedef _Rotamer        rotamer_type;
@@ -267,12 +270,14 @@ namespace molkern
 		* @brief extracts data
 		*/
 		DEFINE_VECTOR_ACCESS_FUNCTION(ARCHETYPE_, _Archetype, archetypes_);
-		DEFINE_VECTOR_ACCESS_FUNCTION(MOLECULE_,  _Molecule,  molecules_ );
+
+		const std::vector<_Molecule*>& get(_I2T<MOLECULE_>) const { return molecules_; };
+
+
 		DEFINE_VECTOR_ACCESS_FUNCTION(ATOM_,      _Atom,      atoms_     );
 
 		DEFINE_VECTOR_ACCESS_FUNCTION(XPOSITION_, real_t, x_);
 		DEFINE_VECTOR_ACCESS_FUNCTION(GPOSITION_, real_t, g_);
-
 		_Box get(_I2T<BOX_>) const { return region_->get(BOX); }
 		const _Region *get(_I2T<REGION_>) const { return region_; }
 		_Region *get(_I2T<REGION_>) { return region_; }
@@ -1057,7 +1062,7 @@ namespace molkern
           for (unsigned i=0; i < molecules_.size(); i++)
           {
             unsigned atomsCountInMoleculeI = (*molecules_[i])->count(ATOM);
-            _Atom* atomsI = atoms__+atom_start_[i]
+            _Atom* atomsI = atoms__+atom_start_[i];
             for (unsigned j=0; j < molecules_.size(); j++)
             {
               unsigned atomsCountInMoleculeJ = (*molecules_[j])->count(ATOM);
@@ -1074,7 +1079,7 @@ namespace molkern
                   energy += currentAtomI.charge * currentAtomJ.charge * coulomb;
                   du__dq += currentAtomJ.charge * coulomb;
                 }
-                currentAtomI.du__dq += du__dq
+                currentAtomI.du__dq += du__dq;
               }
               //correction du__dq contains atom[n-1].du__dq
               for (int atomIIndex = 0; atomIIndex < atomsCountInMoleculeI - 1; atomIIndex++)

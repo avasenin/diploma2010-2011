@@ -126,7 +126,64 @@ namespace prgkern
 		}
 	#undef ASSERT_DIMENSIONS
 	};
+	template <typename T>
+        void transpose(mdense_<UNLIMITED_, UNLIMITED_, T>& A, mdense_<UNLIMITED_, UNLIMITED_, T>& result)
+        {
+          typedef typename mdense_<UNLIMITED_, UNLIMITED_, T>::index_type  dimension_type;
+          dimension_type dimension  = A.dimension();
+          result.resize(dimension[1], dimension[0]);
+          for (unsigned i=0; i < dimension[0]; i++)
+          {
+            for (unsigned j=0; j < dimension[1]; j++)
+            {
+              result(j,i)=A(i,j);
+            }
+          }
+        }
 
+	template <typename T>
+    void mul(mdense_<UNLIMITED_, UNLIMITED_, T>& A, mdense_<UNLIMITED_, UNLIMITED_, T>& B, mdense_<UNLIMITED_, UNLIMITED_, T>& result )
+        {
+          typedef typename mdense_<UNLIMITED_, UNLIMITED_, T>::index_type  dimension_type;
+          dimension_type dimensionA  = A.dimension();
+          dimension_type dimensionB  = B.dimension();
+          assert(dimensionA[1] == dimensionB[0]);
+          result.resize(dimensionA[0], dimensionB[1]);
+          for (unsigned i=0; i < dimensionA[0]; i++)
+          {
+            for (unsigned j=0; j < dimensionB[1]; j++)
+            {
+              T ret= (T) 0.;
+              for (unsigned k=0; k< dimensionB[0]; k++)
+              {
+                ret += A(i,k)*B(k, j);
+              }
+              result(i,j) = ret;
+            }
+          }
+
+        }
+	template <typename T>
+	INLINE void copy(mdense_<UNLIMITED_, UNLIMITED_, T> &A, mdense_<UNLIMITED_, UNLIMITED_, T> &result)
+	{
+        typedef typename mdense_<UNLIMITED_, UNLIMITED_, T>::index_type  dimension_type;
+        dimension_type dimension  = A.dimension();
+        result.resize(dimension[0], dimension[1]);
+        for (unsigned i=0; i < dimension[0]; i++)
+        {
+          for (unsigned j=0; j < dimension[1]; j++)
+          {
+            result(i,j)=A(i,j);
+          }
+        }
+	}
+
+	template <typename T>
+	INLINE void invert(mdense_<UNLIMITED_, UNLIMITED_, T> &U, mdense_<UNLIMITED_, UNLIMITED_, T> &result)
+	{
+		copy(U, result);
+		invert(result);
+	}
 	/**
 	* @brief get U(-1) from upper triangle matrix
 	* @note result matrix replaces the origin matrix
