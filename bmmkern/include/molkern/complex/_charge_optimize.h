@@ -8,9 +8,13 @@
 #include "molkern/complex/_coulomb_params.h"
 #include "molkern/forcefield/_charge_optimize_params.h"
 #include <vector>
+#include <iostream>
+#include <fstream>
+#include <iomanip>
 namespace molkern
 {
   using namespace prgkern;
+  using namespace std;
   /**
   * @brief geometry optimizer for molecule (or complex)
   */
@@ -39,48 +43,58 @@ namespace molkern
         basis.insert(Basis_::value_type(atom_symbol, gaussian_exponent));
       }
       //init atoms charges
-      /*real_t charges[2*number_of_atoms];
-      memset(charges, 0, 2 * number_of_atoms * sizeof(real_t));
-*/    for (int i = 0; i < number_of_atoms; i++)
-      {
-        //m_variables[i] = atoms[i].atomdata->charge;
-	/*m_variables[0] = -0.896;
-	m_variables[1] = 0.418;
-	m_variables[2] = 0.478;
-     */     //RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).formal_charge;
-      }
+
       CoulombParams::build(basis);
       ChargeOptimizeParams<LPComplex>* params = new ChargeOptimizeParams<LPComplex>(complex);
+
       //collapseEnumeration(charges, m_variables, params);
-    //  for (unsigned i=0; i < number_of_atoms; i++)
-     // {
-      //  PRINT_MESSAGE(make_string("i=%d CHARGE OPTIMIZE=%.5e\n",i,atoms[i].charge));
-     // }
-      /*
+
       energy = Minimizer_<OPTIMIZER_TYPE>::operator()(
         &dU__dQ<LPComplex>, params,
         2 * number_of_atoms - 1, m_variables, m_derivatives, param.maxiter,
-        param.stpmin, param.stpmax,
+        param.stpmin * (real_t) 0.001, param.stpmax,
         param.maxfev, param.maxhalt,
-        param.wolfe1, param.wolfe2,
-        param.xtol, param.ftol, param.gtol,
-        param.m, param.steep
-      ); */
-
-      for (int k=0; k < 200; k++)
+        param.wolfe1 * (real_t) 0.001, param.wolfe2 * (real_t) 0.001,
+        param.xtol * (real_t) 0.001, param.ftol * (real_t) 0.001, param.gtol * (real_t) 0.001,
+        param.m * 1000, param.steep * 1000
+      );
+      ofstream fqeq("./qeq_.txt");
+      for (unsigned i=0; i < number_of_atoms; i++)
+      {
+    	  fqeq << setiosflags(ios::fixed) << setprecision(5) << atoms[i].charge << endl;
+      }
+      fqeq.close();
+      memset(m_variables, 0, 2 * number_of_atoms * sizeof(real_t));
+      for (unsigned i=0; i < number_of_atoms; i++)
+      {
+    	m_variables[i] = atoms[i].charge;
+      }
+      //m_variables[0] = atoms[0].charge;
+      //m_variables[1] = 0.41886;
+      //m_variables[2] = 0.47857;
+      ofstream own("./own_.txt");
+      own << setiosflags(ios::fixed) << setprecision(5) << "QEq "<< atoms[2].charge << endl;
+      real_t* avarage = new real_t[number_of_atoms];
+      memset(avarage, 0, number_of_atoms * sizeof(real_t));
+      real_t last = 0.;
+      int period = -1;
+      for (int k=0; k < 2000; k++)
       {
         for (int i=0; i < 1000; i++)
         {
           modeling(m_variables, 0.0001, params);
         }
-        PRINT_MESSAGE(make_string("%.4f %.4f %.4f", m_variables[0], m_variables[1], m_variables[2]));
-        //modeling(m_variables, 0.0001, params);
+        avarage[2] = (avarage[2] * k + m_variables[2]) / (k + 1);
+        own << setiosflags(ios::fixed) << setprecision(5) <<  m_variables[2] << " " << avarage[2] << endl;
+        if (-1 != period && 0 != k && (0 <= max(last, m_variables[5])) &&  (min(last, m_variables[5]) < 0))
+        {
+        	period = k;
+        }
+        last = m_variables[5];
       }
-
-      modeling(m_variables, 0.00001, params);
-      modeling(m_variables, 0.00001, params);
-      modeling(m_variables, 0.00001, params);
+      own.close();
       delete params;
+      delete avarage;
       delete m_variables;
       delete m_derivatives;
       for (unsigned i=0; i < number_of_atoms; i++)
@@ -232,14 +246,7 @@ namespace molkern
       collapseEnumeration(derivatives, derivativesCompressed, params);
       return energy;
     }
-//---------------------
-    static void dpCalculator(unsigned atomIndexA, unsigned atomIndexB, unsigned atomOffset, unsigned numberOfAtomsInMolecule, const mdense_<UNLIMITED_, UNLIMITED_, real_t>& matrixAKA, real_t* dp_dt, real_t* numerator, real_t* denomirator)
-    {
-      if (atomIndexA == numberOfAtomsInMolecule)
-        *numerator += matrixAKA(atomIndexA + atomOffset, atomIndexB + atomOffset) * dp_dt[atomIndexA];
-      else
-        *denomirator += matrixAKA(atomIndexA + atomOffset, atomIndexB + atomOffset);
-    }
+
     template <typename TComplex>
     static void modeling(real_t *variables, real_t time, ChargeOptimizeParams<TComplex>* params)
     {
@@ -253,6 +260,8 @@ namespace molkern
       real_t* p = variables+ params->getNumberOfAtoms();
 
       real_t derivatives[2*params->getNumberOfAtoms()];
+      memset(derivatives, 0, 2 * params->getNumberOfAtoms()*sizeof(real_t));
+
       real_t* dq_dt = derivatives;
       real_t* dp_dt = derivatives + params->getNumberOfAtoms();
 
@@ -281,18 +290,45 @@ namespace molkern
         }
         q[numberOfAtomsInMolecule + atomOffset - 1] = -charge;
       }
-//calculating dh_dp and dh_dq
+//calculating dq_dt
+      atomOffset = 0;
+      int bondOffset = 0;
+      for (unsigned moleculeIndex = 0; moleculeIndex < numberOfMolecules; moleculeIndex++)
+      {
+        if (0 != moleculeIndex)
+        {
+          const _Archetype* prevArchetype = molecules[moleculeIndex - 1]->archetype();
+          atomOffset += prevArchetype->count(ATOM);
+          bondOffset += prevArchetype->count(BOND);
+        }
+        const _Archetype* currentArchetype = molecules[moleculeIndex]->archetype();
+        for (unsigned bondIndex = 0; bondIndex < currentArchetype->count(BOND); bondIndex++)
+        {
+          unsigned i = currentArchetype->get(BOND)[bondIndex].ndx[0];
+          unsigned j = currentArchetype->get(BOND)[bondIndex].ndx[1];
+          dq_dt[i] += matrixAKA(i,j)*p[j];
+          dq_dt[j] += matrixAKA(j,i)*p[i];
+        }
+      }
+      for (unsigned i = 0; i < params->getNumberOfAtoms(); i++)
+      {
+        dq_dt[i] += matrixAKA(i,i)*p[i];
+      }
+//calculation dp_dt
+      const vector< pair<int, int> >& notZeroMatrixJIndexes = params->getNotZeroMatrixJIndexes();
       for (unsigned i=0; i < params->getNumberOfAtoms(); i++)
       {
-        real_t speedQ = 0;
-        real_t speedP = RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).electronegativity;
-        for (unsigned j=0; j < params->getNumberOfAtoms(); j++)
+        dp_dt[i] = -RappleGoddardParams::instance()->find(make_string(atoms[i].atomdata->name)).electronegativity;
+      }
+      for (unsigned k=0; k < notZeroMatrixJIndexes.size(); k++)
+      {
+        int i = notZeroMatrixJIndexes[k].first;
+        int j = notZeroMatrixJIndexes[k].second;
+        dp_dt[i] -= matrixJ(i,j)*q[j];
+        if (i != j)
         {
-          speedQ += matrixAKA(i,j)*p[j];
-          speedP += matrixJ(i,j)*q[j];
+          dp_dt[j] -= matrixJ(j,i)*q[i];
         }
-        dp_dt[i] = -speedP;
-        dq_dt[i] = speedQ;
       }
 //normalization
       atomOffset = 0;
@@ -305,26 +341,21 @@ namespace molkern
         }
         const _Archetype* currentArchetype = molecules[moleculeIndex]->archetype();
         unsigned numberOfAtomsInMolecule = currentArchetype->count(ATOM);
-        real_t numerator = 0.;
-        real_t denomirator = 0.;
         for (unsigned atomIndex = 0; atomIndex < numberOfAtomsInMolecule - 1; atomIndex++)
         {
           dp_dt[atomIndex + atomOffset] -= dp_dt[numberOfAtomsInMolecule + atomOffset - 1];
-          dpCalculator(atomIndex, atomIndex, atomOffset, numberOfAtomsInMolecule, matrixAKA, dp_dt, &numerator, &denomirator);
         }
-        dpCalculator(numberOfAtomsInMolecule - 1, numberOfAtomsInMolecule - 1, atomOffset, numberOfAtomsInMolecule, matrixAKA, dp_dt, &numerator, &denomirator);
         const _Bond* bonds = currentArchetype->get(BOND);
         int numberOfBonds = currentArchetype->count(BOND);
         for (unsigned bondIndex = 0; bondIndex < numberOfBonds; bondIndex++)
         {
           unsigned atomIndexA = bonds[bondIndex].ndx[0];
           unsigned atomIndexB = bonds[bondIndex].ndx[1];
-          dpCalculator(atomIndexA, atomIndexB, atomOffset, numberOfAtomsInMolecule, matrixAKA, dp_dt, &numerator, &denomirator);
-          dpCalculator(atomIndexB, atomIndexA, atomOffset, numberOfAtomsInMolecule, matrixAKA, dp_dt, &numerator, &denomirator);
         }
         dp_dt[numberOfAtomsInMolecule -1] = 0.;
 
       }
+
       for (unsigned i=0; i < params->getNumberOfAtoms(); i++)
       {
         q[i] += dq_dt[i]*time;

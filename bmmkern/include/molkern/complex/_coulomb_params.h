@@ -10,7 +10,7 @@ namespace molkern
     double zeta;
   };
   /// Threshold for calculating Coulomb integrals
-  const double COULOMB_INTEGRAL_THRESHOLD = 1.0e-9;
+  const double COULOMB_INTEGRAL_THRESHOLD = 1.0e-3;
   const double LOG_COULOMB_INTEGRAL_THRESHOLD = log(COULOMB_INTEGRAL_THRESHOLD);
 
   /// Threshold for calculating overlap integrals

@@ -1,0 +1,13 @@
+1.  file gaff.dat has errors in section EQUIVALENTS (not agrees with AMBER format)
+__gaff.dat hasn't this error
+__parm.dat exclude IB type with 5A radius (solvated ion) for support effiency of grids
+
+2. __all_*.lib files are corrected to GROMACS output
+
+3. добавлено описание ротамеров
+!entry.SER.unit.rotamers table  str axisname str axisname int N str atomname_1 .. str atomname_N
+ "CA" "CB" 4 "HB2" "HB3" "OG" "HG"
+
+4. При вставке новых растворов необходимо помнить, что координаты атомов должны быть сдвинуты
+на половину вектора трансляции элементарной ячейки раствора (в отрицательную сторону).
+Должно быть задано число цепей, то есть правильно описана секция residuesPdbSequenceNumber.

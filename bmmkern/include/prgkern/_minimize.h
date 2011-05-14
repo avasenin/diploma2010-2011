@@ -55,10 +55,10 @@ namespace prgkern
 	enum { SCITBX_LBFGS_, GSL_SIMPLEX_, STEEP_, LMBFGS_, ROUND_ };
 
 	/// минимально разрешенное смещение в x-пространстве
-	const float DEFAULT_STPMIN = 0.001;
+	const float DEFAULT_STPMIN = 0.0001;
 
 	/// максимально разрешенное смещение в x-пространстве
-	const float DEFAULT_STPMAX = 0.100;
+	const float DEFAULT_STPMAX = 0.0100;
 
 	/// Принимает как допустимый минимум, если "падение" энергии оказалось в пределах DEFAULT_WOLFE1
 	const float DEFAULT_WOLFE1 = 0.1;
@@ -67,7 +67,7 @@ namespace prgkern
 	const float DEFAULT_WOLFE2 = 0.1;
 
 	/// Максимальное число вызовов внешней функции, которая считает энергию и градиент
-	const unsigned DEFAULT_MAXFEV = 200; // need large value ~200 for first iteration
+	const unsigned DEFAULT_MAXFEV = 2000; // need large value ~200 for first iteration
 
 	/// число последовательных попыток прервать итерационный процесс
 	const unsigned DEFAULT_MAX_HALTS = 3;

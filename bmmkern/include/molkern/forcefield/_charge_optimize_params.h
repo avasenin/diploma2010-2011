@@ -3,7 +3,7 @@
 
 #pragma once
 
-
+using namespace std;
 namespace molkern
 {
   template<typename TComplex>
@@ -98,13 +98,6 @@ public:
           m_AKA(j,j) += m_K(k,k);
         }
       }
-      /*mdense_<UNLIMITED_, UNLIMITED_, real_t> m_K_1;
-      invert(m_K, m_K_1);
-      mdense_<UNLIMITED_, UNLIMITED_, real_t> first;
-      mul(m_A, m_K_1, first);
-      mdense_<UNLIMITED_, UNLIMITED_, real_t> second;
-      transpose(m_A, second);
-      mul(first, second, m_AKA);*/
   //    printMatrix(m_AKA, "Matrix AKA");
     };
 
@@ -134,6 +127,9 @@ public:
       //printMatrix(m_K, "Matrix K");
     }
 
+    vector< pair<int,int> > m_effectiveJValues;
+    const vector< pair<int,int> >& getNotZeroMatrixJIndexes() const {return m_effectiveJValues;}
+#define EPS 0.0001
     void buildMatrixJ()
     {
       typedef typename TComplex::atom_type _Atom;
@@ -141,9 +137,14 @@ public:
       m_J.resize(m_numberOfAtoms, m_numberOfAtoms);
       for (unsigned i=0; i < m_numberOfAtoms; i++)
       {
-        for (unsigned j=0; j < m_numberOfAtoms; j++)
+        for (unsigned j=i; j < m_numberOfAtoms; j++)
         {
-          m_J(i, j) = CoulombParams::instance()->get(atoms[i], atoms[j]);
+          double value =  CoulombParams::instance()->get(atoms[i], atoms[j]);
+          m_J(i, j) = value;
+          m_J(j, i) = value;
+          if (EPS < abs(value)) {
+            m_effectiveJValues.push_back(pair<int, int>(i,j));
+          }
         }
       }
       printMatrix(m_J, "Matrix J");
