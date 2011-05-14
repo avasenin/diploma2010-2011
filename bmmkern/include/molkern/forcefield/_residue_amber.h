@@ -198,6 +198,7 @@ namespace molkern
 		{
 			std::istringstream s(make_string(line));
 			s >> buf1 >> buf2 >> atom.typex >> atom.resx >> atom.flags >> atom.seq >> atom.elmnt >> atom.chg;
+			atom.chg = IntCharge(atom.chg);
 
 			atom.name = trim(_S(buf1), " \"");
 			atom.type = trim(_S(buf2), " \"");

@@ -24,13 +24,14 @@ namespace molkern
 		char line[256];
 		std::string pdb_name(make_string(atomdata.pdb_name));
 		std::string residue(make_string(atomdata.residue));
-		const char *format3 = "%5d  %-3s %-4s%c%4d    %8.3lf%8.3lf%8.3lf%8.3lf";
-		const char *format4 = "%5d %-4s %-4s%c%4d    %8.3lf%8.3lf%8.3lf%8.3lf";
+		const char *format3 = "%5d  %-3s %-4s%c%4d    %8.3f%8.3f%8.3f%8.3f";
+		const char *format4 = "%5d %-4s %-4s%c%4d    %8.3f%8.3f%8.3f%8.3f";
 		const char *format = format3;
 		if (pdb_name.length() == 4) format = format4;
 		::sprintf(line, format, atomdata.sid, pdb_name.c_str(),
 			residue.c_str(), atomdata.chain, atomdata.res_seq,
-			atom.X[0], atom.X[1], atom.X[2], atom.charge/SQRT_ELECTRIC_FACTOR);
+			(float)atom.X[0], (float)atom.X[1], (float)atom.X[2],
+			(float)ExtCharge(atom.charge));
 		std::string name__ = make_string(atomdata.name);
 		std::string type__ = make_string(atomdata.fftype);
 		std::string msg = _S(line) + _S(" ") + name__ + _S(" ") + type__
@@ -67,9 +68,10 @@ namespace molkern
 		// операция обратная той, что сделана в archetype::build(_I2T<FORMAT_HIN_>
 		// при этом не гарантируем точного восстановления номеров, хотя гарантируем
 		// точность восстановления топологии связей
-		::sprintf(s, "atom %5d - %2s %2s - %8.5lf %10.5lf %10.5lf %10.5lf  %1u ",
+		::sprintf(s, "atom %5d - %2s %2s - %8.5f %10.5f %10.5f %10.5f  %1u ",
 			atomdata.sid, name__.c_str(), type__.c_str(),
-			atom.charge / SQRT_ELECTRIC_FACTOR, atom.X[0], atom.X[1], atom.X[2],
+			(float)ExtCharge(atom.charge),
+			(float)atom.X[0], (float)atom.X[1], (float)atom.X[2],
 			atomdata.nbond);
 
 		char s__[12];
@@ -91,9 +93,10 @@ namespace molkern
 		std::string name__ = make_string(atomdata.name);
 		std::string type__ = make_string(atomdata.fftype);
 		std::string residue__ = make_string(atomdata.residue);
-		::sprintf(s, "  %5d %-4s     %9.4lf %9.4lf %9.4lf %2s     %4d %-3s      %9.4lf",
-			atomdata.sid, name__.c_str(), atom.X[0], atom.X[1], atom.X[2], type__.c_str(),
-			atomdata.res_seq, residue__.c_str(), atom.charge / SQRT_ELECTRIC_FACTOR);
+		::sprintf(s, "  %5d %-4s     %9.4f %9.4f %9.4f %2s     %4d %-3s      %9.4f",
+			atomdata.sid, name__.c_str(),
+			(float)atom.X[0], (float)atom.X[1], (float)atom.X[2], type__.c_str(),
+			atomdata.res_seq, residue__.c_str(), (float)ExtCharge(atom.charge));
 		return s;
 	}
 
@@ -125,7 +128,7 @@ namespace molkern
 			sprintf(s__, "%-4s%c%4d    ", residue.c_str(), atomdata.chain, res_seq);
 			strcat(s, s__);
 		}
-		sprintf(s__,"%8.3lf%8.3lf%8.3lf", atom.X[0], atom.X[1], atom.X[2]);
+		sprintf(s__,"%8.3f%8.3f%8.3f", (float)atom.X[0], (float)atom.X[1], (float)atom.X[2]);
 		strcat(s, s__);
 
 		return s;
@@ -165,7 +168,7 @@ namespace molkern
 		*(unsigned32_t *)s = zip_atom;
 
 
-		*(signed16_t*)(s +  4) = (signed16_t)(round(atomdata.charge * BMM_QGRID_STEP));
+		*(signed16_t*)(s +  4) = (signed16_t)(round(ExtCharge(atomdata.charge) * BMM_QGRID_STEP));
 		*(signed16_t*)(s +  6) = (signed16_t)(round(atom.X[0] * BMM_XGRID_STEP));
 		*(signed16_t*)(s +  8) = (signed16_t)(round(atom.V[0] * BMM_VGRID_STEP));
 		*(signed16_t*)(s + 10) = (signed16_t)(round(atom.X[1] * BMM_XGRID_STEP));

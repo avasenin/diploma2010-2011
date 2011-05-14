@@ -23,10 +23,15 @@
 #include <boost/preprocessor/iteration/local.hpp>
 #include "prgkern/_prgconfig.h"
 #include "prgkern/_string.h"
+#include <time.h>
 #include <ctime>
+#include <map>
 
 namespace prgkern
 {
+	/*
+	 * Объект для регистрации физического времени расчета
+	 */
 	struct system_time_t
 	{
 		double sec_;
@@ -42,7 +47,13 @@ namespace prgkern
 	}
 
 	INLINE std::string make_string(system_time_t tm)
-	{ return make_string("%14.6f", (float)tm) + _S(" s"); }
+	{
+		float sec = (float)tm;
+		unsigned days  = sec / 8640; sec -= days  * 8640;
+		unsigned hours = sec / 360;  sec -= hours * 360;
+		unsigned mins  = sec / 60;   sec -= mins  * 60;
+		return make_string("%2d:%02d:%02d:%05.2f", days, hours, mins, sec);
+	}
 
 #ifdef USE_LINUX_SPECIFIC_CODE
 
@@ -60,7 +71,7 @@ namespace prgkern
 	#define TIME_TESTING_START(msg, iteration) { \
 		std::string msg_09267106_A953_52b7_A54A_024279B90300(msg); \
 		struct timeval tv_09267106_A953_52b7_A54A_024279B90300; \
-		::gettimeofday(&tv_09267106_A953_52b7_A54A_024279B90300, NULL); \
+		gettimeofday(&tv_09267106_A953_52b7_A54A_024279B90300, NULL); \
 		int iteration_09267106_6E53_5abf_C84A_02425EE50600 = iteration; \
 		int time1_09267106_6E53_5abf_C84A_02425EE50600 \
 			= tv_09267106_A953_52b7_A54A_024279B90300.tv_sec; \
@@ -71,7 +82,7 @@ namespace prgkern
 			i__09267106_6E53_5abf_C84A_02425EE50600++) {
 
 	#define TIME_TESTING_FINISH } \
-			::gettimeofday(&tv_09267106_A953_52b7_A54A_024279B90300, NULL); \
+			gettimeofday(&tv_09267106_A953_52b7_A54A_024279B90300, NULL); \
 			int time2_09267106_6E53_5abf_C84A_02425EE50600 \
 				= tv_09267106_A953_52b7_A54A_024279B90300.tv_sec; \
 			long time2ms_09267106_6E53_5abf_C84A_02425EE50600 \
@@ -95,6 +106,7 @@ namespace prgkern
 			} \
 			PRINT_MESSAGE(msg_09267106_A953_52b7_A54A_024279B90300); \
 		}
+
 #ifdef USE_POSIX_2001
 	INLINE system_time_t current_time()
 	{
@@ -119,6 +131,46 @@ namespace prgkern
 	INLINE system_time_t current_time() { time_t tm; time(&tm); return system_time_t(tm, 0); }
 
 #endif
+
+	/*
+	 *  Таймер для учета модельного времени симуляции.
+	 */
+	class model_timer_t
+	{
+		long unsigned cycle_counter_;      // счетчик тиков системы
+		double cycle_time_;                // время между тиками
+		std::string unit_;                 // единица измерения времени
+
+	public:
+
+		model_timer_t(double cycle_time=0., const char *unit="ps")
+		: cycle_counter_(0), cycle_time_(cycle_time), unit_(unit) {}
+
+		void init(double cycle_time=0., const char *unit="ps")
+		{
+			cycle_counter_ = 0;
+			cycle_time_ = cycle_time;
+			unit_ = unit;
+		}
+
+		/// увеличивает время таймера на 1
+		void operator++() { cycle_counter_++; }
+		void operator++(int) { cycle_counter_++; }
+
+		/// возвращает текущее время модели
+		double current_time() const { return cycle_counter_ * cycle_time_; }
+
+		/// возвращает единицу измерения времени модели
+		std::string time_unit() const { return unit_; }
+	};
+
+	/// функция извлекает из глобального счетчика текущее время для динамики
+	INLINE std::string make_string(const model_timer_t &tm)
+	{
+		std::string unit = tm.time_unit();
+		double time = tm.current_time();
+		return make_string("%8.3f %s", (float)time, unit.c_str());
+	}
 
 	template <int N, unsigned NT=8> class function_timer_t
 	{
@@ -167,6 +219,73 @@ namespace prgkern
 
 	template <int N, unsigned NT> double function_timer_t<N, NT>::accumulate_time[NT + 1];
 	template <int N, unsigned NT> long unsigned function_timer_t<N, NT>::accumulate_count[NT + 1];
+
+	/*
+	 * Объект, наследник которого может быть зарегистрирован в некоторой базе данных, объектам
+	 * которых высылаются уведомления, что наступило некоторое событие. На данное время, таким
+	 * событием является завершение некоторого шага динамики.
+	 */
+	class notified_object_
+	{
+	protected:
+
+		unsigned notification_time_;  // период уведомления
+		unsigned counter_;            // пришедшее количество уведомлений
+
+	public:
+
+		notified_object_(unsigned notification_time)
+		: notification_time_(notification_time), counter_(0) {}
+
+		virtual ~notified_object_() {}
+
+		void set_notification_period(unsigned click)
+		{ notification_time_ = click; counter_ = 0; }
+
+		virtual void process_notification() { counter_++; }
+	};
+
+	/*
+	 * Объект, который является базой данных уведомляемых объектов, и рассылай всем, кто у него
+	 * зарегистрирован уведомления о наступлении тех или иных событий. Основным событие пока
+	 * является завершение того или иного шага динамики.
+	 */
+	class system_notifier_t
+	{
+		typedef std::multimap<unsigned, notified_object_ *>  _Container;
+		typedef _Container::value_type                       _Pair;
+		typedef _Container::const_iterator                   _Iterator;
+
+		_Container objects_to_be_notified_;
+		model_timer_t &timer_;
+
+	public:
+
+		/*
+		 * Уведомитель сажается на глобальный таймер и позволяет менять его значения.
+		 */
+		system_notifier_t(model_timer_t &timer) : timer_(timer) {}
+
+		/**
+		 * Регистрация объекта для уведомления.
+		 * @param obj указатель на объект для уведомления
+		 * @param n параметр, определяющий порядок выполнения (меньше => раньше)
+		 */
+		void register_notified_object(notified_object_ *obj, unsigned n=0)
+		{ objects_to_be_notified_.insert(_Pair(n, obj)); }
+
+		/*
+		 * Увеличение счетчика таймера с последующей рассылкой уведомлений зарегистрированным объектам.
+		 */
+		void operator++()
+		{
+			++timer_; // увеличивает счетчик
+
+			_Iterator it = objects_to_be_notified_.begin(), ite = objects_to_be_notified_.end();
+			for ( ; it!=ite; ++it) ((*it).second)->process_notification(); // рассылаем уведомления
+		}
+	};
+
 }
 
 #endif

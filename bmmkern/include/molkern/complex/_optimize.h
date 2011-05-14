@@ -19,7 +19,7 @@ namespace molkern
 	public:
 
 		template <typename LPComplex, typename Param>
-		real_t operator()(LPComplex *complex, const Param &param)
+		real_t run(LPComplex *complex, const Param &param)
 		{
 			real_t energy = 0.;
 

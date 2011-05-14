@@ -19,61 +19,50 @@ int main(int argc, char *argv[])
 #else
 	Interaction interaction(config.cutoff_radius, config.barrier);
 #endif
-	Complex::region_type region(config.box, config.cutoff_radius);
 	ForceField forcefield(config.data_dir);
 	Residome residome(config.data_dir);
 
 	//----------------------------------------------------------------------------
 	//                              построение
 	//----------------------------------------------------------------------------
-	Complex complex(&forcefield, &residome, &region, config.pH, config.density);
+	Complex complex(&config, &forcefield, &residome);
 		// создадим пустой комплекс
 
 	// загрузим и построим все молекулы
-	for (unsigned i=0,sz=config.count(MOLECULE); i<sz; i++)
+	for (unsigned i=0,sz=config.count(ARCHETYPE); i<sz; i++)
 	{
-		Descriptor_<MOLECULE_> desc(config.molecules[i]);
-			// конвертируем текстовую строку, описывающую молекулу, в набор параметров
-
-		_S filename = config.work_dir + desc.name;
-
-		// загрузим архетип молекулы в регион
-		complex.load(MOLECULE, filename, desc.freedom_type, desc.count, desc.altpos);
+		Interface_<ARCHETYPE_> interface = config.get_interface(ARCHETYPE, i);
+		_S filename = config.work_dir + interface.name;
+		unsigned count = 1;
+		complex.load(ARCHETYPE, filename, interface.freedom_type, count, interface.altpos);
 	}
 
 	// загрузим архетип воды
 	if (config.water != _S(""))
 	{
-		Descriptor_<WATER_> desc(config.water);
-		complex.load(WATER, desc.name, desc.freedom_type);
+		Interface_<WATER_> interface = config.get_interface(WATER);
+		complex.load(WATER, interface.name, interface.freedom_type);
 	}
 
 	// разместим молекулы и воду
 	complex.build(YES_CLASHES);
+
+	// распечатаем начальное состояние для контроля построения
+	complex.U();
 
 	//----------------------------------------------------------------------------
 	//                              оптимизация
 	//----------------------------------------------------------------------------
 	if (config.iterations >= 0)
 	{
-		// распечатаем начальное состояние для контроля построения
-		complex.U();
-
-		Descriptor_<OPTIMIZER_> desc(config); // загрузим описание оптимизатора
+		Interface_<OPTIMIZER_> interface = config.get_interface(OPTIMIZER);
 		Optimizer_<LMBFGS_> optimizer; // инициализируем оптимизатор
 
 		// выполним оптимизацию
-		optimizer(&complex, desc);
+		optimizer.run(&complex, interface);
 
 		// распечатаем конечное состояние для контроля оптимизации
 		complex.U();
-
-		Descriptor_<FILE_> file(config.outfile_descriptor);
-		if (file.name != _S(""))
-		{
-			_S filename = config.work_dir + file.name;
-			complex.save(filename, file.use_water, file.use_hydrogens);
-		}
 	}
 
 	//----------------------------------------------------------------------------
@@ -81,30 +70,29 @@ int main(int argc, char *argv[])
 	//----------------------------------------------------------------------------
 	if (config.process_time > 0.)
 	{
-		Descriptor_<THERMOSTATE_> desc(config); // загрузим описание термостата
-		Thermostat thermostat(desc, &complex);
-			// контактируем молекулу с термостатом и установим ее начальное состояние
-			// (температуру, или полную энергию, или давление)
+		TIME_TESTING_START("Full cycle of dynamisc finished...", 1)
 
-		Descriptor_<FILE_> statfile(config.statfile_descriptor);
-		_S filename = config.work_dir + statfile.name;
+		Ensemble ensamble(&config, &complex);         // накопитель "мгновенной" статистики
+		Statistics statistics(&config, &complex);     // файл глобальной статистики
 
-		Integrator integrator(&complex, config.integration_time,
-			config.sampling_time, filename, statfile.use_water);
+		Thermostat thermostat(&config, &ensamble, &complex);
+			// контактируем молекулу с термостатом и установим начальное состояние:
+			// температуру, энергию, или давление
+
+		Integrator integrator(&config, &ensamble, &complex);
 			// контактируем молекулу с интегратором и установим его начальное состояние
 
-		integrator.run(&thermostat, &complex, config.process_time);
+		// зарегистрируем уведомляемые объекты у интегратора
+		integrator.register_notified_object(&thermostat, 1);
+		integrator.register_notified_object(&ensamble,   2);
+		integrator.register_notified_object(&statistics   );
 
-		Descriptor_<FILE_> outfile(config.outfile_descriptor);
-		if (outfile.name != _S(""))
-		{
-			_S filename = config.work_dir + outfile.name;
-			complex.save(filename, outfile.use_water, outfile.use_hydrogens);
-		}
+		integrator.run(&thermostat);
+		TIME_TESTING_FINISH;
+
+		// распечатаем конечное состояние для контроля динамики
+		complex.U();
 	}
-
-	// распечатаем конечное состояние для контроля оптимизации
-	complex.U();
 
 	return 0;
 }

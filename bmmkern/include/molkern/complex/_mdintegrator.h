@@ -1,7 +1,8 @@
-#ifndef _MDYNAMICS__F9ED1116_EDB9_5e17_25FF_F745B15D0100__H
-#define _MDYNAMICS__F9ED1116_EDB9_5e17_25FF_F745B15D0100__H
+#ifndef _MDINTEGRATOR__F9ED1116_EDB9_5e17_25FF_F745B15D0100__H
+#define _MDINTEGRATOR__F9ED1116_EDB9_5e17_25FF_F745B15D0100__H
 
 #include "molkern/__moldefs.h"
+#include "molkern/__config.h"
 #include "molkern/complex/_thermostat.h"
 
 namespace molkern
@@ -121,21 +122,25 @@ namespace molkern
 	}
 
 	enum { LEAP_FROG_};
-	template <int INTEGRATOR_TYPE> class Integrator_;
+	template <int INTEGRATOR_TYPE, typename _Ensemble, typename _System>
+	class Integrator_;
 
-	template <> class Integrator_<LEAP_FROG_>
+	template <typename _Ensemble, typename _System>
+	class Integrator_<LEAP_FROG_, _Ensemble, _System>
+	: public system_notifier_t
 	{
-		unsigned dt_; // шаг интегрирования (число fs)
-		unsigned sampling_time_; // шаг сбора статистики (fs)
-		std::ofstream file1_; // базовый файл статистики
-		std::ofstream file2_; // вспомогательный файл статистики
-		std::string filename_; // имя файла статистики
-		bool prn_water_; // печатать ли воду в файл статистики
+		mutable _Ensemble *ensemble_;      // статистика для счета "мгновенных" термодинамических параметров
+		mutable _System *system_;          // система, для которой выполняется интегрирование и статистика
 
-		std::vector<real_t> _1mass_;      // инверсные массы атомов (1 / mass)
-		std::vector<vector_t> X0_, X1_; // координаты в предыдущей, текущей точке
-		std::vector<vector_t> V0_, V1_; // скорости в предыдущей, текущей точке
-		std::vector<vector_t> A0_, A1_; // ускорения в предыдущей, текущей точке
+		real_t dt_;              // шаг интегрирования (число ps)
+		real_t process_time_;    // полное время интегрирования
+		real_t max_velocity_;    // максимально разрешенная скорость атомов, чтобы не развалить систему
+		real_t M_;               // суммарная масса всех атомов системы
+
+		std::vector<real_t> invmass_, mass_;    // инверсные и обычные массы атомов (1 / mass)
+		std::vector<vector_t> X0_, X1_;    // координаты в предыдущей, текущей точке
+		std::vector<vector_t> V0_, V1_;    // скорости в предыдущей, текущей точке
+		std::vector<vector_t> A0_, A1_;    // ускорения в предыдущей, текущей точке
 
 	public:
 
@@ -147,67 +152,52 @@ namespace molkern
 		* @param dt шаг интегрирования
 		* @param average_time время усреднения
 		*/
-		template <typename _Molecule>
-		Integrator_(_Molecule *molecule,
-			unsigned dt=DEFAULT_INTEGRATION_TIME_STEP,
-			unsigned sampling_time=DEFAULT_SAMPLING_TIME_STEP,
-			const std::string &statfile=_S(""),
-			bool prn_water=true)
-		: dt_(dt), sampling_time_(sampling_time), prn_water_(prn_water)
+		Integrator_(const Configure *conf, _Ensemble *ensemble, _System *system)
+		: system_notifier_t (global_model_time)
+		, ensemble_         (ensemble)
+		, system_           (system)
+		, dt_               (conf->integration_time)
+		, process_time_     (conf->process_time)
+		, max_velocity_     (conf->max_displacement / dt_)
 		{
-			_S filename = basename(statfile); // удаляем путь и расширение
-
-			// открываем файл статистики, если он задан
-			if (filename != _S(""))
-			{
-				std::string file1_name = statfile + _S(".bmm");
-				std::string file2_name = statfile + _S(".bmf");
-				file1_.open(file1_name.c_str(), std::ios_base::binary);
-				file2_.open(file2_name.c_str(), std::ios_base::binary);
-				if (!file1_ || !file2_)
-				{
-					std::string msg = _S("[ERROR] can't open statistics file ") + statfile;
-					PRINT_BREAK(msg);
-				}
-				filename_ = statfile;
-
-				// сохраним ящик и число атомов
-				molecule->write_header(_I2T<FORMAT_BMM_>(), file1_);
-			}
-
-			typedef typename _Molecule::atom_type          _Atom;
+			typedef typename _System::atom_type            _Atom;
 			typedef array_iterator<_Atom, range_iterator>  _Iterator;
 
 			_Iterator it; unsigned i; // постоянно используемые переменные цикла
-			unsigned atom_count = molecule->count(ATOM);
+			unsigned N = system->count(ATOM);
 
-			_1mass_.resize(atom_count);
-			X0_.resize(atom_count); X1_.resize(atom_count);
-			V0_.resize(atom_count); V1_.resize(atom_count);
-			A0_.resize(atom_count); A1_.resize(atom_count);
+			invmass_.resize(N);
+			mass_.resize(N);
+			X0_.resize(N); X1_.resize(N);
+			V0_.resize(N); V1_.resize(N);
+			A0_.resize(N); A1_.resize(N);
 
 			//------------------------------------------------------------------------
 			//               инициализация цикла молекулярной динамики
 			//------------------------------------------------------------------------
-			molecule->dU__dX(); // предвычисление сил
+			system->dU__dX(); // предвычисление сил
 
-			_Iterator itb = molecule->make_iterator(range_iterator(0));
-			_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
+			_Iterator itb = system->make_iterator(range_iterator(0));
+			_Iterator ite = system->make_iterator(range_iterator(N));
 			for (it=itb,i=0; it!=ite; ++it, i++)
 			{
 				const _Atom &atom = *it;
-				_1mass_[i] = (real_t)1. / atom->mass;
+				mass_[i] = atom->mass;
+				invmass_[i] = (real_t)1. / mass_[i];
+				M_ += mass_[i];
 				X0_[i] = atom.X;
-				A0_[i] = atom.F * _1mass_[i];
-				V0_[i] = atom.V - A0_[i] * ((real_t)0.0005 * dt_);
-					// скорость в промежуточной точке -dt/2 + преобразование в ps
+				A0_[i] = atom.F * invmass_[i];
+				V0_[i] = atom.V - 0.5 * dt_ * A0_[i]; // скорость в промежуточной точке -dt/2
 			}
-			remove(IMPULSE, molecule);
+			ensemble_->sample_statistics(); // чтобы занести 0-точку и избежать счета с нулями в термостате
 
 			//------------------------------------------------------------------------
 			//               основной цикл молекулярной динамики
 			//------------------------------------------------------------------------
 			PRINT_MESSAGE("\n      ***** ____ start of molecular dynamics ____ *****\n");
+
+			global_model_time.init(conf->integration_time, "ps"); // обнулим счетчики времени
+			global_start_time = current_time(); // фиксируем физическое время старта симуляции
 		}
 
 		~Integrator_()
@@ -216,124 +206,73 @@ namespace molkern
 			//              конец основного цикла молекулярной динамики
 			//------------------------------------------------------------------------
 			PRINT_MESSAGE("\n      ***** _____ end of molecular dynamics _____ *****");
-
-			file1_.close();
-			file2_.close();
-
-			if (filename_!=_S("")) SAVED_OK_MESSAGE(filename_ + _S("{.bmm, .bmf}"));
 		}
 
 		/**
 		*  Выполненение интегрирования уравнений молекулярной динамики.
 		* @param thermostat тип термодинамического ансамбля
-		* @param molecule комплекс молекул
+		* @param system комплекс молекул
 		* @param process_time время процесса [fs]
 		* @return число выполненых шагов динамики
 		*  Возвращается целое число, чтобы точно отсчитывать пройденное время.
 		*/
-		template <typename _Thermostat, typename _Molecule>
-		void run(const _Thermostat *thermostat, _Molecule *molecule,
-			unsigned process_time)
+		template <typename _Thermostat>
+		void run(const _Thermostat *thermostat)
 		{
-			typedef typename _Molecule::atom_type          _Atom;
+			typedef typename _System::atom_type            _Atom;
 			typedef array_iterator<_Atom, range_iterator>  _Iterator;
-			unsigned atom_count = molecule->count(ATOM);
 
-			_Iterator it; unsigned i; // постоянно используемые переменные цикла
-			_Iterator itb = molecule->make_iterator(range_iterator(0));
-			_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
+			unsigned N = system_->count(ATOM);
+			_Atom *atoms = system_->get(ATOM);
+			real_t max_velocity2_ = sqr(max_velocity_);
 
-			global_model_time = 0; unsigned curr_time = 0; // обнулим счетчики времени
-			real_t dt = (real_t) 0.001 * dt_; // физическое время в [ps]
-			real_t maxv = (real_t) DEFAULT_MAX_X / dt; // максимально разрешенная скорость
+			_Iterator it; // постоянно используемые переменные цикла
+			_Iterator itb = system_->make_iterator(range_iterator(0));
+			_Iterator ite = system_->make_iterator(range_iterator(N));
 
-			system_time_t start_time = current_time(); // фиксируем физическое время старта симуляции
-
-			TIME_TESTING_START("Full cycle of dynamisc finished...", 1)
-			while ((global_model_time += dt_) < process_time)
+			long unsigned cycles_to_be_processed = round(process_time_ / dt_);
+			for (long unsigned ti=0; ti<cycles_to_be_processed; ti++)
 			{
-				unsigned stopped_atoms = 0; // число атомов для которых скорости сброшены
-
+				vector_t P = 0.;
 				// скорости и координаты в следующей точке
-	//			real_t v2=0, v2m; unsigned c=0;
-				for (i=0; i<atom_count; i++)
+				for (unsigned i=0; i<N; i++)
 				{
-					V1_[i] = V0_[i] + A0_[i] * dt;
-					real_t sp = scalar_product(V1_[i], V1_[i]);
-//					if (_1mass_[i] < 0.1) { v2 += sp; c++; if (v2m<sp) v2m=sp; }
-					if (sp > sqr(maxv))
+					V1_[i] = V0_[i] + A0_[i] * dt_;
+					if (V1_[i].length2() > max_velocity2_)
 					{
 						// скинем очень большие скорости, что в свою очередь ограничит смещение
-						V1_[i].normalize(maxv);
-						stopped_atoms++;
+						V1_[i].normalize(max_velocity_);
 					}
-					X1_[i] = X0_[i] + V1_[i] * dt;
+					P += V1_[i] * mass_[i];
 				}
-//				v2 /= c;
-//				v2 = sqrt(v2);
-//				v2m = sqrt(v2m);
+				P *= (1. / M_);
+
+				for (unsigned i=0; i<N; i++)
+				{
+					V1_[i] -= P; // удалим движение центра масс
+					X1_[i] = X0_[i] + V1_[i] * dt_;
+				}
 
 				// сохраним новые координаты и вычислим силы в новой конфигурации
-				molecule->read_md_position(&X1_[0], &V1_[0]);
+				system_->read_md_position(&X1_[0], &V1_[0]);
+				system_->dU__dX();
 
-				molecule->dU__dX();
-				thermostat->sample_statistics(molecule);
-				//thermostat->scaling(molecule);
-				if ( (curr_time += dt_) >= sampling_time_ )
-				{
-//					thermostat->scaling(molecule);
-					// сделаем скейлинг скоростей согласно термодинамическому ансамблю
-					remove(IMPULSE, molecule);
-					_S msg = _S(" ") + make_string(current_model_time()) + _S("   ")
-						+ thermostat->scaling(molecule)
-						+ _S("   time =") + make_string(current_time() - start_time)
-						; //+ _S(" ") + make_string(function_timer_t<CALC_TIMER_>::last_time);
-//					if (stopped_atoms) msg += _S(" *");
-//					msg += make_string(" <v>=%e mv=%e", v2, v2m);
-					PRINT_MESSAGE(msg);
-	//				std::cout << make_string(current_model_time()) << " " <<  make_string(current_time() - start_time) << std::endl;
+				++(*this); // увеличим счетчик событий и уведомим об этом все связанные объекты
 
-//					if (file1_.is_open() && file2_.is_open())
-//					{
-//						std::ofstream::pos_type pos = file1_.tellp();
-//						file2_.write((char*)&pos, sizeof(pos));
-//							// позиция записи в поток сохраняется во вспомогательном файле
-//						molecule->save(FORMAT_BMM, file1_, prn_water_);
-//
-//						// реальная запись, чтобы можно было оборвать выполнение и
-//						// файлы при этом сохранились
-//						file2_.flush();
-//						file1_.flush();
-//					}
-					curr_time = 0;
-				}
-				for (it=itb,i=0; it!=ite; ++it, i++)
+				for (unsigned i=0; i<N; i++)
 				{
-					V1_[i] = (*it).V;
-					A1_[i] = (*it).F * _1mass_[i];
+					V1_[i] = atoms[i].V; // сохраним скалированные термостатом скорости
+					A1_[i] = atoms[i].F * invmass_[i];
 				}
 
 				X1_.swap(X0_);
 				V1_.swap(V0_);
 				A1_.swap(A0_);
 			}
-			TIME_TESTING_FINISH;
-
-#ifdef USE_VERLET_TABLE
-			{
-//				_S msg = make_string("verlet table rebuilding count = %d", molecule->count(REBUILD));
-//				PRINT_MESSAGE(msg);
-			}
-#endif
-//			unsigned md_steps = global_model_time / dt_;
-//			_S msg = make_string("md steps = %d", md_steps) + _S(" time per md step = ")
-//					+ make_string(double(current_time() - start_time) / md_steps);
-//			PRINT_MESSAGE(msg);
 		}
-
 	};
 
-	typedef Integrator_<LEAP_FROG_> Integrator;
+	typedef Integrator_<LEAP_FROG_, Ensemble, Complex> Integrator;
 
 }
 #endif

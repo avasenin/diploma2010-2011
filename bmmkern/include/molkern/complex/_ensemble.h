@@ -2,213 +2,200 @@
 #define _ENSEMBLE__F9ED1116_EDB9_5e17_25FF_F745B15D0101__H
 
 #include "molkern/__moldefs.h"
+#include "molkern/__config.h"
 
 namespace molkern
 {
 	using namespace prgkern;
 
-	/**
-	*  Расчет текущей кинетической энергии объекта в предположении максвеловского
-	*  распределения.
-	* @param molecule указатель на молекулу или комплекс молекул
-	* @return энергия [KJ/mol]
-	*/
-	template <typename _Molecule>
-	inline _E(real_t) kinetic_energy(_Molecule *molecule)
+	template <typename _System>
+	class Ensemble_ : public notified_object_
 	{
-		typedef typename _Molecule::atom_type          _Atom;
-		typedef array_iterator<_Atom, range_iterator>  _Iterator;
+		mutable _System *system_;     // система, для которой накапливается статистика
 
-		_E(real_t) kenergy = 0.;
-		unsigned atom_count = molecule->count(_I2T<ATOM_>());
-
-		_Iterator it = molecule->make_iterator(range_iterator(0));
-		_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
-		for (; it!=ite; ++it)
+		virtual void process_notification()
 		{
-			const _Atom &atom = *it;
-			kenergy += atom->mass * scalar_product(atom.V, atom.V);
+			notified_object_::process_notification();
+
+			sample_statistics(); // "мгновенная" статистика набирается на каждом шаге
+
+			if (counter_ % notification_time_ == 0) // печать по заданому периоду времени
+				print();
 		}
-		return (real_t)0.5 * kenergy / atom_count; // нормируем на одну частицу
-	}
-
-	/**===========================================================================
-	*             Различные типы термодинамических ансамблей.
-	*  Предполагается, что существует единый термостат, чтобы облегить код
-	*  на уровне представления пользователя. Однако этот термостат имеет свойства,
-	*  связанные с типом сбора статистики (NVE, NVT, NVP).
-	============================================================================*/
-	enum { NVE, NVT, NVP };
-	template <int TYPE> class Ensemble_;
-
-	/**
-	*  Статистика NVE ансамбля должна хранит только полную энергию системы.
-	*  Но для более комфортного использования мы будем хранить в нем, как
-	*  потенциальную, так и кинетическую энергии. Накопления постоянно
-	*  сбрасываются в консоль для контроля поведения системы.
-	*  Статистика по числу частиц и объему системы (в текущей версии) не ведется,
-	*  так как они не меняются.
-	*/
-	template <> class Ensemble_<NVE>
-	{
-		Average_<real_t> T_; // температура для разных точек фазового пространства
-		real_t target_energy_; // константа данного ансамбля
 
 	public:
 
-		Ensemble_() {}
-		Ensemble_(real_t target_energy, unsigned ns) : T_(ns), target_energy_(target_energy) {}
+		real_t N_; // число частиц
+		Average_<real_t> U_; // статистика по потенциальной энергии системы
+		Average_<real_t> V_; // статистика по объемy системы
+		Average_<real_t> T_; // статистика по температуре в системе
+		Average_<real_t> P_; // статистика по давлению в системе
 
-		template <typename _Molecule>
-		void sample_statistics(_Molecule *molecule)
+		Ensemble_(const Configure *conf, _System *system)
+		: notified_object_  (round(conf->print_time / conf->integration_time))
+		, system_           (system)
+		,	U_                (round(conf->average_time / conf->integration_time))
+		, V_                (round(conf->average_time / conf->integration_time))
+		, T_                (round(conf->average_time / conf->integration_time))
+		, P_                (round(conf->average_time / conf->integration_time))
+		{}
+
+		void sample_statistics()
 		{
-			T_.push(get(_I2T<TEMPERATURE_>(), molecule));
+			typedef typename _System::atom_type            _Atom;
+			typedef array_iterator<_Atom, range_iterator>  _Iterator;
+
+			unsigned N = system_->count(ATOM);
+			real_t volume = system_->get(VOLUME);
+
+			_E(real_t) kenergy = 0.;
+			_E(real_t) virial = 0.;
+
+			_Iterator it = system_->make_iterator(range_iterator(0));
+			_Iterator ite = system_->make_iterator(range_iterator(N));
+			for (; it!=ite; ++it)
+			{
+				const _Atom &atom = *it;
+				kenergy += atom->mass * scalar_product(atom.V, atom.V);
+				virial += scalar_product(atom.X, atom.F);
+			}
+
+			N_ = N;
+			U_.push(system_->get(POTENT_ENERGY));
+			V_.push(volume);
+			T_.push((real_t)Temperature(kenergy / (3 * N)));
+			P_.push((real_t)Pressure((kenergy + virial) / (3 * N)));
 		}
 
 		/**
-		*  Масштабирование скоростей указанных атомов согласно заданной полной энергии.
-		*  Данный алгоритм позволяет поддерживть точное значение энергии для выбранной
-		*  фазовой точки, которая идет в статистику. Алгоритм не требует параметра,
-		*  связанного со временем релаксации (шагом набора статистики), поскольку
-		*  масштабирование делается точно и может быть сделано для каждой точки.
-		* @param molecule указатель на молекулу или комплекс молекул
-		* @return коэффициент lambda
+		*  Печать статистики текущего состояния.
 		*/
-		template <typename _Molecule>
-		std::string scaling(_Molecule *molecule)
+		std::string print_statistics() const
 		{
-			typedef typename _Molecule::atom_type          _Atom;
-			typedef array_iterator<_Atom, range_iterator>  _Iterator;
+			float P = P_.average();
+			float V = V_.average();
+			float T = T_.average();
+//			float P = P_.top();
+//			float V = V_.top();
+//			float T = T_.top();
 
-			real_t U = (real_t) molecule->U();
-			real_t K = (real_t) kinetic_energy(molecule);
-			real_t lambda = (real_t) sqrt((target_energy_ - U) / K);
-				// разность энергий может быть покрыта только изменением кинетической
-				// энергии, потому используем (E - <E>) / K
-
-			unsigned atom_count = molecule->count(_I2T<ATOM_>());
-			_Iterator it = molecule->make_iterator(range_iterator(0));
-			_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
-			for (; it!=ite; ++it) (*it).V *= lambda;
-			K *= sqr(lambda);
-
-			return make_string("K = %12.5e  U = %12.5e  E = %12.5e  T = %6.2f",
-				K, U, (float)(K + U), (float)T_());
+			float K =  1.5 * N_ * KT(T);
+			float U = U_.average();
+			float E = K + U;
+			return make_string("PVT={%10.3e %9.3e %4.0f}  KUE={%10.3e %10.3e %12.5e}",
+				P, V, T, K, U, E);
 		}
-	};
 
-	/**
-	*  Статистика NVT ансамбля должна хранит только температуру.
-	*/
-	template <> class Ensemble_<NVT>
+		void print() const
+		{
+			_S msg = make_string(global_model_time) + _S(" ") + print_statistics()
+				+ make_string(current_time() - global_start_time);
+			PRINT_MESSAGE(msg);
+		}
+
+	};
+	typedef Ensemble_<Complex>   Ensemble;
+
+
+	template <typename _System>
+	class Statistics_ : public notified_object_
 	{
-		Average_<real_t> T_; // температура для разных точек фазового пространства
-		real_t target_temperature_; // константа данного ансамбля
+		_System *system_;             // объект, для которого набирается глобальная статистика
+		real_t integration_time_;     // время шага динамики (требуется для печати статистики)
+		std::ofstream file_;          // файловый объект для сброса статистики
+		std::string filename_;        // имя файла для сброса статистики
+		bool file_opened_;            // открыт/закрыт файл?
+		bool prn_water_;              // печатать ли в файл молекулы воды
+		bool prn_hydrogens_;          // печатать ли в файл водороды
+
+		virtual void process_notification()
+		{
+			notified_object_::process_notification();
+
+			if (counter_ % notification_time_ == 0)
+			{
+				_S time = make_string(global_model_time);
+				save(make_string("FRAME %s", time.c_str()));
+			}
+		}
 
 	public:
 
-		Ensemble_() {}
+		Statistics_() : system_(0), file_opened_(false) {}
 
-		/**
-		*  Расчет NVT статистики текущего состояния.
-		* @param target_temperature целевая температура
-		* @param ns максимальное хранимое число точек для построения статистики
-		*/
-		Ensemble_(real_t target_temperature, unsigned ns)
-		: T_(ns), target_temperature_(target_temperature)
+		Statistics_(const Configure *conf, _System *system)
+		: notified_object_(1), system_(system), filename_("")
+		, file_opened_(false), prn_water_(false), prn_hydrogens_(false)
 		{
+			Interface_<STATISTICS_> interface = conf->get_interface(STATISTICS);
+
+			filename_ = interface.filename;
+			real_t statistics_time = interface.statistics_time;
+			prn_water_ = interface.prn_water;
+			prn_hydrogens_ = interface.prn_hydrogens;
+
+			if (filename_ != _S(""))
+			{
+				set_notification_period(round(statistics_time / conf->integration_time));
+				open(filename_, system);
+			}
+			else
+			{
+				_S msg = _S("\n[WARNING] The statistics would not be saved !\n");
+				PRINT_MESSAGE(msg);
+			}
 		}
 
-		/**
-		*  Расчет NVT статистики текущего состояния.
-		* @param molecule указатель на молекулу или комплекс молекул
-		*/
-		template <typename _Molecule>
-		void sample_statistics(_Molecule *molecule)
+		~Statistics_() { if (file_opened_) close(); }
+
+		void open(std::string &filename, _System *system)
 		{
-			T_.push(get(_I2T<TEMPERATURE_>(), molecule));
+			std::string ext = extension(filename);
+			if (ext == _S(".pdb" ) || ext == _S(".ent" ) || ext == _S(".hin" ) || ext == _S(".mol2")
+				|| ext == _S(".bmm" ))
+			{
+				if (ext != _S(".bmm" )) file_.open(filename.c_str(), std::ios_base::out);
+				else file_.open(filename.c_str(), std::ios_base::out | std::ios_base::binary);
+
+				if (!file_)
+				{
+					std::string msg = _S("can't open statistics file ") + filename;
+					PRINT_ERR(msg);
+				}
+				filename_ = filename;
+
+				// сохраним ящик и число атомов
+				if (ext == _S(".bmm" )) system->write_header(_I2T<FORMAT_BMM_>(), file_);
+				file_opened_ = true;
+			}
 		}
 
-		/**
-		*  Масштабирование скоростей указанных атомов согласно заданной температуре.
-		*  Для масштабирования используется метод Берендсена.
-		* @param molecule указатель на молекулу или комплекс молекул
-		* @param target_temperature целевая температура для масштабирования скоростей
-		* @param time_step шаг интегрирования
-		* @param relax_time время релаксации (подгоночный параметр метода)
-		* @return коэффициент lambda
-		*/
-		template <typename _Molecule>
-		std::string scaling(_Molecule *molecule)
+		void save(const std::string &header)
 		{
-			typedef typename _Molecule::atom_type          _Atom;
-			typedef array_iterator<_Atom, range_iterator>  _Iterator;
+			if (file_opened_)
+			{
+				std::string ext = extension(filename_);
 
-			real_t T__ = T_(); // усредним статистику по полному набору
-			real_t T = get(_I2T<TEMPERATURE_>(), molecule);
+				if      (ext == _S(".pdb" )) system_->save(FORMAT_PDB,  file_, prn_water_, prn_hydrogens_, header);
+				else if (ext == _S(".ent" )) system_->save(FORMAT_PDB,  file_, prn_water_, prn_hydrogens_, header);
+				else if (ext == _S(".hin" )) system_->save(FORMAT_HIN,  file_, prn_water_, prn_hydrogens_, header);
+				else if (ext == _S(".mol2")) system_->save(FORMAT_MOL2, file_, prn_water_, prn_hydrogens_, header);
+				else if (ext == _S(".bmm" )) system_->save(FORMAT_BMM,  file_, prn_water_, prn_hydrogens_, header);
 
-			real_t lambda = (real_t) sqrt(1. + (target_temperature_ - T__) / T);
-				// полностью покрываем разность кинетических энергий без релаксации
+				file_.flush(); // реальная запись, чтобы можно было оборвать выполнение и сохранить файл
+			}
+		}
 
-			unsigned atom_count = molecule->count(_I2T<ATOM_>());
-			_Iterator it = molecule->make_iterator(range_iterator(0));
-			_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
-			for (; it!=ite; ++it) (*it).V *= lambda;
-
-			return make_string("T = %7.2f", (float)T__);
+		void close()
+		{
+			if (file_opened_)
+			{
+				file_.close();
+				SAVED_OK_MESSAGE(filename_);
+			}
 		}
 	};
-
-	/**
-	*  Статистика NVP ансамбля должна хранит только давление.
-	*/
-	template<> class Ensemble_<NVP>
-	{
-		Average_<real_t> pressure_;
-		real_t target_pressure_;
-
-	public:
-
-		Ensemble_() {}
-
-		Ensemble_(real_t target_pressure, unsigned ns)
-		: pressure_(ns), target_pressure_(target_pressure) {}
-
-		/**
-		*  Расчет текущего внутреннего вириала W, кинетической энергии K и давления.
-		*  Заметим, что давление может быть определено только для системы с
-		*  заданным объемом. Расчеты давления показывают, что оно скачет в диапозоне
-		*  [-1e+4, 1e+4], то есть не может быть рассчитано точно.
-		* @param box ячейка, в которой рассчитывается давление
-		* @param molecule указатель на молекулу или комплекс молекул
-		*/
-		template <typename _Molecule>
-		void sample_statistics(_Molecule *molecule)
-		{
-			pressure_.push(get(_I2T<PRESSURE_>(), molecule));
-		}
-
-		template <typename _Molecule>
-		std::string scaling(_Molecule *molecule)
-		{
-			typedef typename _Molecule::atom_type          _Atom;
-			typedef array_iterator<_Atom, range_iterator>  _Iterator;
-
-			real_t P__ = pressure_(); // усредним статистику по полному набору
-			real_t P = get(_I2T<PRESSURE_>(), molecule);
-
-			real_t lambda = (real_t) sqrt(1. + (target_pressure_ - P__) / P);
-				// полностью покрываем разность кинетических энергий без релаксации
-
-			unsigned atom_count = molecule->count(_I2T<ATOM_>());
-			_Iterator it = molecule->make_iterator(range_iterator(0));
-			_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
-			for (; it!=ite; ++it) (*it).V *= lambda;
-
-			return make_string("P = %6.2f", (float)P__);
-		}
-
-	};
+	typedef Statistics_<Complex>  Statistics;
 
 }
 #endif

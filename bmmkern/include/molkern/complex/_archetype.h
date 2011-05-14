@@ -107,7 +107,7 @@ namespace molkern
 		* @brief построение недостающих взаимосвязей для того или иного формата после загрузки
 		* @param pH кислотность воды, для которой строятся компоненты (действительно только для PDB)
 		*/
-		void build(_I2T<MOLECULE_>, int pH=NORMAL_PH_WATER);
+		void build(_I2T<ARCHETYPE_>, int pH=NORMAL_PH_WATER);
 		bool build(_I2T<WATER_>,    int pH=NORMAL_PH_WATER);
 
 		/**
@@ -225,7 +225,7 @@ namespace molkern
 		DEFINE_VECTOR_ACCESS_FUNCTION(ROOT_ROTAMER_, unsigned, roots_);
 
 		const std::string name(_I2T<FILE_>    ) const { return filename_; }
-		const std::string name(_I2T<MOLECULE_>) const { return molname_; }
+		const std::string name(_I2T<ARCHETYPE_>) const { return molname_; }
 		const std::string name() const
 		{
 			std::string msg = _S("\"") + filename_ + _S("\"<") + molname_ + _S(">");
@@ -972,15 +972,7 @@ namespace molkern
 				PRINT_ERR(msg);
 			}
 
-			_Atomdata &atomdata = atomdata_[ndx];
-			_Atomdata &atomdata__ = atomdata_[ndx__];
-
-			atomdata.nid[atomdata.nbond] = atom__;
-			atomdata__.nid[atomdata__.nbond] = atom;
-			atomdata.nvalency[atomdata.nbond] = bondtype__;
-			atomdata__.nvalency[atomdata__.nbond] = bondtype__;
-			atomdata.nbond++;
-			atomdata__.nbond++;
+			make_bond(&atomdata_[0], ndx, ndx__, bondtype__);
 		}
 
 		return true;
@@ -999,27 +991,32 @@ namespace molkern
 		file.read((char*)&atom_count, sizeof(unsigned));
 			// прочли число атомов в файле
 
-		atomdata_.reserve(atom_count);
+//		atomdata_.reserve(atom_count);
+//		{
+//			_Atomdata atomdata;
+//			while (extract_object(_I2T<FORMAT_BMM_>(), atomdata, &file) == CODE_SUCCESS)
+//				atomdata_.push_back(atomdata);
+//		}
+		atomdata_.resize(atom_count);
+		for (unsigned i=0; i<atom_count; i++)
 		{
-			_Atomdata atomdata;
-			while (extract_object(_I2T<FORMAT_BMM_>(), atomdata, &file) == CODE_SUCCESS)
-				atomdata_.push_back(atomdata);
+			extract_object(_I2T<FORMAT_BMM_>(), &atomdata_[0], i, &file);
 		}
 
 		// восстановим обратные ссылки, так как они не храняться в BMM файле
-		for (unsigned i=0; i<atom_count; i++)
-		{
-			_Atomdata &atomdata = atomdata_[i];
-			for (unsigned i__=0; i__<atomdata.nbond; i__++)
-			{
-				if (atomdata.rnid[i__] > 0) // если ссылка вперед
-				{
-					_Atomdata &atomdata__ = atomdata_[i + atomdata.rnid[i__]];
-					atomdata__.rnid[atomdata__.nbond] = -atomdata.rnid[i__];
-					atomdata__.nbond++;
-				}
-			}
-		}
+//		for (unsigned i=0; i<atom_count; i++)
+//		{
+//			_Atomdata &atomdata = atomdata_[i];
+//			for (unsigned i__=0; i__<atomdata.nbond; i__++)
+//			{
+//				if (atomdata.rnid[i__] > 0) // если ссылка вперед
+//				{
+//					_Atomdata &atomdata__ = atomdata_[i + atomdata.rnid[i__]];
+//					atomdata__.rnid[atomdata__.nbond] = -atomdata.rnid[i__];
+//					atomdata__.nbond++;
+//				}
+//			}
+//		}
 
 		return true;
 	}
@@ -1059,19 +1056,16 @@ namespace molkern
 				atomdata.charge = residue_atom->charge;
 				atomdata.X = residue_atom->X0;
 
-				// вставим связи атомов друг с другом
-				atomdata.nbond = residue_atom->na + residue_atom->nh;
+				// вставим связи атомов друг с другом (вперед, чтобы избежать дублирования связей)
 				for (unsigned n=0; n<residue_atom->na; n++)
 				{
-					atomdata.nid[n] = residue_atom->nid[n];
-					atomdata.nvalency[n] = 's';
-					atomdata.rnid[n] = atomdata.nid[n] - i;
+					unsigned nid = residue_atom->nid[n];
+					if (nid > i) make_bond(&atomdata_[0], i, nid, 's');
 				}
 				for (unsigned n=0; n<residue_atom->nh; n++)
 				{
-					atomdata.nid[n + residue_atom->na] = residue_atom->nhid[n];
-					atomdata.nvalency[n + residue_atom->na] = 's';
-					atomdata.rnid[n + residue_atom->na] = atomdata.nid[n + residue_atom->na] - i;
+					unsigned nid = residue_atom->nhid[n];
+					if (nid > i) make_bond(&atomdata_[0], i, nid, 's');
 				}
 
 				{
@@ -1255,7 +1249,7 @@ namespace molkern
 
 	TEMPLATE_HEADER
 	inline void Archetype_<TEMPLATE_ARG>
-	::build(_I2T<MOLECULE_>, int pH)
+	::build(_I2T<ARCHETYPE_>, int pH)
 	{
 		switch (format_)
 		{
@@ -1273,7 +1267,7 @@ namespace molkern
 			build_components |= BUILD_ANGLES;
 			build_components |= BUILD_TORSIONS;
 			build_components |= BUILD_PAIRS14;
-			build_components |= BUILD_CONNECTS;
+		//	build_components |= BUILD_CONNECTS;
 			build_components |= BUILD_ROTAMERS;
 			build_components |= BUILD_CHAINS;
 		}
@@ -1305,7 +1299,7 @@ namespace molkern
 			build_components |= BUILD_ANGLES;
 			build_components |= BUILD_TORSIONS;
 			build_components |= BUILD_PAIRS14;
-			build_components |= BUILD_CONNECTS;
+			//build_components |= BUILD_CONNECTS;
 			build_components |= BUILD_ROTAMERS;
 			build_components |= BUILD_CHAINS;
 		}
@@ -2083,14 +2077,7 @@ namespace molkern
 				// если найден атом впереди, записываем данные
 				if (k != sz && atomdata_[k].res_seq == atomdata.res_seq)
 				{
-					atomdata.nid[atomdata.nbond] = atomdata_[k].sid;
-					atomdata.rnid[atomdata.nbond] = k - i;
-					atomdata.nvalency[atomdata.nbond] = valency;
-					atomdata.nbond++;
-					atomdata_[k].nid[atomdata_[k].nbond] = atomdata.sid;
-					atomdata_[k].rnid[atomdata_[k].nbond] = i - k;
-					atomdata_[k].nvalency[atomdata_[k].nbond] = valency;
-					atomdata_[k].nbond++;
+					make_bond(&atomdata_[0], k, i, valency);
 					continue; // возможно несколько контактов
 				}
 
@@ -2133,16 +2120,7 @@ namespace molkern
 				while (k < sz && atomdata_[k].pdb_name != atom__->name) k++;
 					// пропускаем неконтактные атомы
 				if (k < sz && atomdata_[k].pdb_name == atom__->name)
-				{
-					atomdata.nid[atomdata.nbond] = atomdata_[k].sid;
-					atomdata.rnid[atomdata.nbond] = k - i;
-					atomdata.nvalency[atomdata.nbond] = 'd'; // жесткие межаминокислотные связи
-					atomdata.nbond++;
-					atomdata_[k].nid[atomdata_[k].nbond] = atomdata.sid;
-					atomdata_[k].rnid[atomdata_[k].nbond] = i - k;
-					atomdata_[k].nvalency[atomdata_[k].nbond] = 'd';
-					atomdata_[k].nbond++;
-				}
+					make_bond(&atomdata_[0], k, i, 'd');
 				else
 				{
 					std::string msg = _S("can't find the external residue contact\n")
@@ -2186,16 +2164,7 @@ namespace molkern
 				_Atomdata &atomdata__ = atomdata_[s_atoms[j]];
 				vector_t &X__ = atomdata__.X;
 				if (distance2(X, X__) < SS_BOND_LENGTH_2)
-				{
-					atomdata.nid[atomdata.nbond] = atomdata_[s_atoms[j]].sid;
-					atomdata.rnid[atomdata.nbond] = s_atoms[j] - s_atoms[i];
-					atomdata.nvalency[atomdata.nbond] = 's';
-					atomdata.nbond++;
-					atomdata__.nid[atomdata__.nbond] = atomdata_[s_atoms[i]].sid;
-					atomdata__.rnid[atomdata__.nbond] = s_atoms[i] - s_atoms[j];
-					atomdata__.nvalency[atomdata__.nbond] = 's';
-					atomdata__.nbond++;
-				}
+					make_bond(&atomdata_[0], s_atoms[i], s_atoms[j], 's');
 			}
 		}
 
@@ -3093,11 +3062,11 @@ namespace molkern
 
 		if (make_print)
 		{
-			real_t evarage = (real_t) (count ? energy / count : 0.);
+			real_t average = (real_t) (count ? energy / count : 0.);
 			std::string msg
-				= make_string("  U/bond   / (%5d) : %12.5e", count, (float)energy)
-				+ make_string("   <U> : %12.5e", (float)evarage)
-				+ make_string("   <maxU> : %12.5e", (float)max_energy);
+				= make_string("  U/bond   / (%10d) : %10.3e", count, (float)energy)
+				+ make_string("   <U> : %10.3e", (float)average)
+				+ make_string("   <maxU> : %10.3e", (float)max_energy);
 					// обязательное приведение (real_t)coul_energy требуется, чтобы
 					// избежать вывода _E(real_t) типа со спецификатором %12.5le,
 					// что неверно в случае real_t == double
@@ -3149,11 +3118,11 @@ namespace molkern
 
 		if (make_print)
 		{
-			real_t evarage = (real_t) (count ? energy / count : 0.);
+			real_t average = (real_t) (count ? energy / count : 0.);
 			std::string msg
-				= make_string("  U/angle  / (%5d) : %12.5e", count, (float)energy)
-				+ make_string("   <U> : %12.5e", (float)evarage)
-				+ make_string("   <maxU> : %12.5e", (float)max_energy);
+				= make_string("  U/angle  / (%10d) : %10.3e", count, (float)energy)
+				+ make_string("   <U> : %10.3e", (float)average)
+				+ make_string("   <maxU> : %10.3e", (float)max_energy);
 			PRINT_MESSAGE(msg);
 		}
 
@@ -3196,17 +3165,16 @@ namespace molkern
 				atom0.X, atom1.X, atom2.X, atom3.X);
 
 			max_energy = fabs(max_energy) < fabs(energy__) ? energy__ : max_energy;
-				// замена if на оператор выбора, так как на Cell(?) это быстрее
 			energy += energy__;
 		}
 
 		if (make_print)
 		{
-			real_t evarage = (real_t) (count ? energy / count : 0.);
+			real_t average = (real_t) (count ? energy / count : 0.);
 			std::string msg
-				= make_string("  U/torsion/ (%5d) : %12.5e", count, (float)energy)
-				+ make_string("   <U> : %12.5e", (float)evarage)
-				+ make_string("   <maxU> : %12.5e", (float)max_energy);
+				= make_string("  U/torsion/ (%10d) : %10.3e", count, (float)energy)
+				+ make_string("   <U> : %10.3e", (float)average)
+				+ make_string("   <maxU> : %10.3e", (float)max_energy);
 			PRINT_MESSAGE(msg);
 		}
 
@@ -3271,7 +3239,6 @@ namespace molkern
 			{
 				max_coul_energy = fabs(max_coul_energy) < fabs(coul_energy__) ? coul_energy__: max_coul_energy;
 				max_vdw_energy = fabs(max_vdw_energy) < fabs(vdw_energy__) ? vdw_energy__: max_vdw_energy;
-					// замена if на оператор выбора, так как на Cell(?) это быстрее
 			}
 		}
 
@@ -3279,21 +3246,21 @@ namespace molkern
 		{
 			#ifndef SKIP_COUL_ENERGY
 			{
-				real_t coul_evarage = (real_t) (count ? coul_energy / count : 0.);
+				real_t coul_average = (real_t) (count ? coul_energy / count : 0.);
 				std::string msg
-					= make_string("  U/coul14 / (%5d) : %12.5e", count, (float)coul_energy)
-					+ make_string("   <U> : %12.5e", (float)coul_evarage)
-					+ make_string("   <maxU> : %12.5e", (float)max_coul_energy);
+					= make_string("  U/coul14 / (%10d) : %10.3e", count, (float)coul_energy)
+					+ make_string("   <U> : %10.3e", (float)coul_average)
+					+ make_string("   <maxU> : %10.3e", (float)max_coul_energy);
 				PRINT_MESSAGE(msg);
 			}
 			#endif
 			#ifndef SKIP_VDW_ENERGY
 			{
-				real_t vdw_evarage = (real_t) (count ? vdw__energy / count : 0.);
+				real_t vdw_average = (real_t) (count ? vdw__energy / count : 0.);
 				std::string msg
-					= make_string("  U/vdw14  / (%5d) : %12.5e", count, (float)vdw__energy)
-					+ make_string("   <U> : %12.5e", (float)vdw_evarage)
-					+ make_string("   <maxU> : %12.5e", (float)max_vdw_energy);
+					= make_string("  U/vdw14  / (%10d) : %10.3e", count, (float)vdw__energy)
+					+ make_string("   <U> : %10.3e", (float)vdw_average)
+					+ make_string("   <maxU> : %10.3e", (float)max_vdw_energy);
 				PRINT_MESSAGE(msg);
 			}
 			#endif

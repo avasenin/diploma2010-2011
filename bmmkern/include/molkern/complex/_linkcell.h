@@ -210,77 +210,69 @@ namespace molkern
 		unsigned vsz = velement_count<vreal_t>(atom_count);
 			// число элементов в массиве из векторных данных (для SSE оно кратно 4)
 
-		//===============================================================================================
-		// Алгоритм использует два массива SSE векторов для расчета. Первый массив хранит
-		// значения плотно упакованными - каждый элемент SSE вектора соответствует разным значениям.
-		// Второй массив хранит одинаковые сдублированные по 4 раза значения. Такая схема позволяет
-		// максимально быстро создать и считать всевозможные пары, поскольку не требует переноса
-		// данных по памяти или SHUFFLE операций внутри SSE векторов для получения перекрестных пар,
-		// и дает почти 2 кратный выигрыш по сравнению с ними.
-		//===============================================================================================
+		/*
+		 * Алгоритм использует два массива SSE векторов для расчета. Первый массив хранит
+		 * значения плотно упакованными - каждый элемент SSE вектора соответствует разным значениям.
+		 * Второй массив хранит одинаковые сдублированные по 4 раза значения. Такая схема позволяет
+		 * максимально быстро создать и считать всевозможные пары, поскольку не требует переноса
+		 * данных по памяти или SHUFFLE операций внутри SSE векторов для получения перекрестных пар,
+		 * и дает почти 2 кратный выигрыш по сравнению с ними.
+		 */
 		__LJAtom<vreal_t, vint_t> ljatom1[vsz], ljatom2[atom_count];
 		read_data(&ljatom1[0], &ljatom2[0], pos);
 
 		vreal_t energy = 0.f;
 
-		//===============================================================================================
-		// Использована сложная схема суммирования, которая суммирует сперва наиболее удаленные пары и
-		// в последнюю очередь более близкие пары. Это позволяет несколько увеличить точность расчетов.
-		// Однако суммирование выполняется в 3 цикла, вместо обычных 2-х. Эффективность меняется в
-		// пределах долей процента, поскольку число ячеек, для которых работает этот алгоритм в 26 раз
-		// меньше, чем для алгоритма, рассчитывающего взаимодействия между соседними ячейками.
-		// Данная схема написана для Интел процессора и не должна прямо переноситься на графические
-		// процессоры типа Теслы. Схема выполняет суммирование по диагоналям матрицы взаимодействий, а
-		// не по строкам этой матрицы, как это было бы естественно.
-		//===============================================================================================
-		for (unsigned i=1; i<vsz; i++) // проход по диагоналям матрицы взаимодействий
+		unsigned empty = vsz * vreal_t::size - atom_count;
+		for (unsigned i=0; i<vsz-1; i++)
 		{
-			int ii__ = atom_count - vreal_t::size * i;
-			for (unsigned j=0,ii=0; j<i; j++,ii++,ii__+=vreal_t::size)
+			__LJAtom<vreal_t, vint_t> &atom1 = ljatom1[i];
+			unsigned i__ = (i + 1) * vreal_t::size - empty;
+			for (; i__<atom_count; i__++)
 			{
-				__LJAtom<vreal_t, vint_t> &atom1 = ljatom1[ii];
-				for (unsigned k=0; k<vreal_t::size; k++)
-				{
-					__LJAtom<vreal_t, vint_t> &atom2 = ljatom2[ii__ + k];
-					LJ_CALCULATE(is_interaction, energy__, fx, fy, fz, rmax2, atom1, atom2);
-					atom1.fx += fx; atom1.fy += fy; atom1.fz += fz;
-					atom2.fx -= fx; atom2.fy -= fy; atom2.fz -= fz;
-					energy += energy__;
-				}
-			}
-		}
-
-		for (unsigned ii=1; ii<vsz; ii++)
-		{
-			// Суммирование остатков, лежащих на диагонали матрицы (1, 2, 3, 4) -> (2, 3, 4, 1) и т.д.
-			// делается в последнюю очередь, так как там находятся члены, даюшщие самые большие
-			// результаты. Так пытаемся сохранить точность. Использовано дублирование взаимодействий,
-			// так что энергия должна уменьшаться вдвое, а силы записываться только для одного атома пары.
-			// Второй атом (точнее 4 атома, записанных в SSE вектор) вращаются ror(atom2),
-			// чтобы обеспечить расчет всех требуемых пар.
-
-			__LJAtom<vreal_t, vint_t> &atom1 = ljatom1[ii];
-			__LJAtom<vreal_t, vint_t> atom2 = ljatom1[ii];
-			for (unsigned i=1; i<vreal_t::size; i++)
-			{
-				ror1(atom2);
+				__LJAtom<vreal_t, vint_t> &atom2 = ljatom2[i__];
 				LJ_CALCULATE(is_interaction, energy__, fx, fy, fz, rmax2, atom1, atom2);
 				atom1.fx += fx; atom1.fy += fy; atom1.fz += fz;
-				energy += 0.5 * energy__;
+				atom2.fx -= fx; atom2.fy -= fy; atom2.fz -= fz;
+				energy += energy__;
 			}
 		}
 
-		unsigned n = atom_count - (vsz - 1) * vreal_t::size;
-		for (unsigned l=0; l<n-1; l++)
+		/*
+		 * Алгоритм ипользует схему симметричного накопления сил, то есть, если к какому-то атому
+		 * добавляется сила atom1.fx += fx, то точно такая же сила вычитается из парного атома
+		 * atom2.fx -= fx. Это позволяет добиться того, что сумма всех сил, действующих на всю систему
+		 * в целом равна с хорошей степенью точности 0. По неизвестной мне причине, попытка
+		 * использования несимметричного накопления дает плохую точность накопления всех сил.
+		 */
+		for (unsigned ii=0; ii<vsz; ii++)
 		{
-			__LJAtom<vreal_t, vint_t> &atom1 = ljatom2[l];
-			for (unsigned l__=l+1; l__<n; l__++)
+			__LJAtom<vreal_t, vint_t> &atom1 = ljatom1[ii];
+			__LJAtom<vreal_t, vint_t> atom2 = ljatom1[ii];
+			atom2.fx = 0.; atom2.fy = 0.; atom2.fz = 0.;
+
+			for (unsigned i=1; i<vreal_t::size / 2; i++)
 			{
-				__LJAtom<vreal_t, vint_t> &atom2 = ljatom2[l__];
+				rol1(atom2);
 				LJ_CALCULATE(is_interaction, energy__, fx, fy, fz, rmax2, atom1, atom2);
-				atom1.fx[0] += fx[0]; atom1.fy[0] += fy[0]; atom1.fz[0] += fz[0];
-				energy[0] += energy__[0];
+				atom1.fx += fx; atom1.fy += fy; atom1.fz += fz;
+				atom2.fx -= fx; atom2.fy -= fy; atom2.fz -= fz;
+				energy += energy__;
 			}
+			rol1(atom2);
+			LJ_CALCULATE(is_interaction, energy__, fx, fy, fz, rmax2, atom1, atom2);
+			fx *= 0.5; fy *= 0.5; fz *= 0.5;
+			atom1.fx += fx; atom1.fy += fy; atom1.fz += fz;
+			atom2.fx -= fx; atom2.fy -= fy; atom2.fz -= fz;
+			energy += 0.5 * energy__;
+
+			for (unsigned i=0; i<vreal_t::size / 4; i++)
+			{
+				atom2.fx = ror2(atom2.fx);
+				atom2.fy = ror2(atom2.fy);
+				atom2.fz = ror2(atom2.fz);
+			}
+			atom1.fx += atom2.fx; atom1.fy += atom2.fy; atom1.fz += atom2.fz;
 		}
 
 		// Сохранение насчитанных сил в ячейках региона.
@@ -472,14 +464,14 @@ namespace molkern
 			molkern::read_data(m, ljatom, atom__ + ndx);
 		}
 
+	#ifdef USE_GONNET
 		for (unsigned i=0; i<empty; i++)
 		{
 			__LJAtom<T1, T2> &ljatom = ljatom1[i / n];
 			unsigned m = i % n;
-		#ifdef USE_GONNET
 			*((typename T1::value_type *)&ljatom.hash + m) = *((real_t *)&ljatom.hash + empty);
-		#endif
 		}
+	#endif
 
 		// заполним 2-й массив дублируя атом по всем позициям SSE вектора
 		atom__ = node2->get(ATOM);

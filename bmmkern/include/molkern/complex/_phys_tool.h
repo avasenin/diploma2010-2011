@@ -9,7 +9,7 @@ namespace molkern
 
 	/**
 	* @brief calculate mass of complex molecule
-	* @return the mass of molecule
+	* @return the mass of molecule (во внутренних единицах)
 	*/
 	template <typename Molecule, typename Iterator>
 	INLINE typename Molecule::real_type
@@ -41,15 +41,13 @@ namespace molkern
 	* @return the mass center of molecule
 	*/
 //	template <typename Molecule, typename Iterator>
-//	INLINE const vdense_<Molecule::dimension, real_t>
-//	calculate(_I2T<MASS_CENTER_>, const Molecule *molecule,
+//	INLINE const vector_t calculate(_I2T<MASS_CENTER_>, const Molecule *molecule,
 //		Iterator it, Iterator ite)
 //	{
-//		typedef vdense_<Molecule::dimension, real_t>   _Point;
 //		typedef typename Molecule::atom_type           _Atom;
 //		typedef const_array_iterator<_Atom, Iterator>  _Iterator;
 //
-//		_Point cm = 0; unsigned count = 0; real_t mass = 0.;
+//		vector_t cm = 0; unsigned count = 0; real_t mass = 0.;
 //
 //		_Iterator it__ = molecule->make_iterator(it);
 //		_Iterator ite__ = molecule->make_iterator(ite);
@@ -74,6 +72,10 @@ namespace molkern
 
 	/**
 	* @brief calculate determinant of inertia center
+	* Возможные проблемы (требуется проверять), что
+	* 1) массы во внутреннем представлении (с коэффициентом 0.01)
+	* 2) размерность тензора инерции может не согласоваться с системой СИ
+	*
 	* @return the determinant
 	*/
 	template <typename Molecule, typename Iterator>
@@ -158,6 +160,9 @@ namespace molkern
 	*  Рассчитывает потенциал дальнего кулона на точках сетки PPPM методом,
 	*  аппроксимирует силы на атомах молекулы с помощью ближайших точек сетки,
 	*  рассчитывает кулоновскую энергию.
+	*
+	*  Требуется внимательный контроль зарядов
+	*
 	* @param molecule[in,out] молекула (комплекс молекул)
 	* @param h - шаг сетки
 	* @param smooth_radius - радиус сглаживания заряда атомов
@@ -215,10 +220,10 @@ namespace molkern
 // 		}
 // 	TIME_TESTING_FINISH
 //
-// // 		if (std::abs(Q) > M_SAFETY)
+// // 		if (std::abs(ExtCharge(Q)) > M_SAFETY)
 // // 		{
 // // 			_S msg = _S("\n[USING ERROR] Full charge of system is ")
-// // 				+ make_string(Q / SQRT_ELECTRIC_FACTOR) + _S("\n")
+// // 				+ make_string(ExtCharge(Q)) + _S("\n")
 // // 				+ _S("   You must provide full Q == 0 to use PPPM method\n");
 // // 			PRINT_MESSAGE(msg);
 // // 		}
@@ -283,7 +288,7 @@ namespace molkern
 // 		for (iterator it=molecule->begin(_I2T<ATOMS_>()),
 // 			ite=molecule->end(_I2T<ATOMS_>()); it!=ite; ++it)
 // 		{
-// 			_Real charge = (*it).charge / SQRT_ELECTRIC_FACTOR;
+// 			_Real charge = ExtCharge((*it).charge);
 // 			mesh.get_neighbours((unsigned *)neig, X__, (*it).X);
 //
 // 			linear_interpolation(4, &F__[0], X__[0], X__[1], X__[2],

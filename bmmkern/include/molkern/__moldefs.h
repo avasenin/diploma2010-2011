@@ -26,6 +26,9 @@
 /// определяется при использовании SSE(,2,3,4) расширений
 #define USE_SSE
 
+/// определяется при использовании CUDA расширений
+//#define USE_CUDA
+
 /// определяются для пропуска счета тех или иных энергетических вкладов
 //  #define SKIP_BONDS_ENERGY
 //  #define SKIP_ANGLS_ENERGY
@@ -43,7 +46,7 @@
 
 /// используется эффективно работающий в параллельном коде метод связанных ячеек
 /// с упорядочением атомов в ячейках по направлениям по Гоннету (USE_GONNET)
-#define USE_GONNET
+//#define USE_GONNET
 
 //#define USE_ERF
 
@@ -79,9 +82,6 @@
 /// определяется при тестировании соответствия требуемых молекулой параметров
 /// силовых полей тем, которые имеются в базе силового поля
 // #define FULL_TOPOLOGY_DEBUG
-
-/// определяется при тестировании Верлет таблицы
- #define VERLET_DEBUG
 
 /// (всегда) определяется для тестировании построения молекулы
 #define STOP_AFTER_FIRST_TOPOLOGY_ERROR
@@ -150,7 +150,6 @@ namespace molkern
 	typedef unsigned int    unsigned32_t;
 
 	const real_t ACCURACY = 10 * std::numeric_limits<real_t>::epsilon();
-	const real_t ACCURACY2 = sqr(ACCURACY);
 
 	/// using identifiers of types & objects
 	enum IDENTS_OF_OBJECTS
@@ -220,6 +219,7 @@ namespace molkern
 		PRESSURE_,           // давление
 		VOLUME_,             // объем
 		VELOCITY_,           // скорость
+		STATE_,              // состояне термостата (давление, объем, температура и пр.)
 
 		FREEDOM_TYPE_,
 		FREEDOM_FIXED_,      // нет свободы движения
@@ -252,6 +252,7 @@ namespace molkern
 		ROTAMER_POSITION_,
 		MOMENT_,
 		GRADIENT_,
+		VELOSITY_,
 
 		FORCEFIELD_AMBER_,    // AMBER protein forcefield
 		FORCEFIELD_GAFF_,     // AMBER inorganic ligand forcefield
@@ -268,6 +269,15 @@ namespace molkern
 		PARALL_,
 		NEIGHBOR_,
 		EDGE_LENGTH_,
+		POTENT_ENERGY_,
+
+		INTEGRATOR_,
+		ENSEMBLE_,
+		STATISTICS_,
+		NVT_,
+		NVE_,
+		NVP_,
+		NPT_,
 
 		OBJECT_UNKNOWN_
 	};
@@ -295,6 +305,7 @@ namespace molkern
 	DEFINE_TAG_CONST(RESIDUE_NAME);
 	DEFINE_TAG_CONST(RESIDUE_CONTACT);
 	DEFINE_TAG_CONST(MOLECULE);
+	DEFINE_TAG_CONST(ARCHETYPE);
 
 	DEFINE_TAG_CONST(COUL);
 	DEFINE_TAG_CONST(VDW);
@@ -332,6 +343,9 @@ namespace molkern
 	DEFINE_TAG_CONST(XPOSITION);
 	DEFINE_TAG_CONST(GPOSITION);
 	DEFINE_TAG_CONST(GRADIENT);
+	DEFINE_TAG_CONST(POTENT_ENERGY);
+
+	DEFINE_TAG_CONST(OPTIMIZER);
 
 	DEFINE_TAG_CONST(FORCEFIELD_AMBER);
 	DEFINE_TAG_CONST(FORCEFIELD_GAFF);
@@ -347,10 +361,19 @@ namespace molkern
 
 	DEFINE_TAG_CONST(TEMPERATURE);
 	DEFINE_TAG_CONST(PRESSURE);
+	DEFINE_TAG_CONST(VOLUME);
+	DEFINE_TAG_CONST(VELOSITY);
+	DEFINE_TAG_CONST(STATE);
 	DEFINE_TAG_CONST(IMPULSE);
 	DEFINE_TAG_CONST(PARALL);
 	DEFINE_TAG_CONST(NEIGHBOR);
 	DEFINE_TAG_CONST(EDGE_LENGTH);
+	DEFINE_TAG_CONST(ENSEMBLE);
+	DEFINE_TAG_CONST(STATISTICS);
+	DEFINE_TAG_CONST(NVT);
+	DEFINE_TAG_CONST(NVE);
+	DEFINE_TAG_CONST(NVP);
+	DEFINE_TAG_CONST(NPT);
 
 #undef DEFINE_TAG_CONST
 
@@ -381,6 +404,8 @@ namespace molkern
 	const unsigned YES_CM_       = 0x00000002;
 	const unsigned YES_ROTAMER_  = 0x00000004;
 	const unsigned YES_ATOM_     = 0x00000008;
+	const unsigned YES_ALL       = YES_ATOM_;
+	const unsigned NO_ALL        = 0x00000000;
 
 	const unsigned CALC_NOTHING_ = 0x00000000;
 	const unsigned CALC_BOND_    = 0x00000001;
@@ -467,14 +492,6 @@ namespace molkern
 	/// число попыток заполнения вставки каждой молекулы в случайную позицию области
 	const unsigned DEFAULT_DISPOSE_ITERATIONS = 10;
 
-	/// среднее количество атомов в единице объема в 1 A**3 равно 0.0036
-	/// получено через тестовые расчеты и чуть увеличено
-	const real_t DEFAULT_ATOM_DENSITY = 0.05;
-
-	/// default step of trajectory integration [ps]
-	const unsigned DEFAULT_INTEGRATION_TIME_STEP = 1; // 1 fs
-	const unsigned DEFAULT_SAMPLING_TIME_STEP = 10; // 10 fs
-
 	/// coeffs of scaling 14-interactions
 	const real_t AMBER_SCALE_COUL14 = 0.8333; // opls.pdf
 	const real_t AMBER_SCALE_VDW14 = 0.5;
@@ -487,7 +504,7 @@ namespace molkern
 	* длина [Angstrom] 10**(-10) м
 	* время [ps] 10**(-12) сек
 	* масса [a.u.m.] 1/12 массы углерода
-	* энергия [AUE/mol] атомная единица энергии (она ровно в 100 больше kJ/mol)
+	* энергия [AUE/mol] атомная единица энергии (она ровно в 100 меньше kJ/mol)
 	* --------------------------------------------------------------------------*/
 	/// функция печатает единицы измерения программы
 	inline void print_user_information()
@@ -507,9 +524,8 @@ namespace molkern
 			"!!                                                                     !!\n"
 			"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
 			"!!                                                                     !!\n"
-			"!!  MEASURE UNITS        :  A(length), ps(time), a.m.u.(mass),         !!\n"
-			"!!                          e(charge), K(temperature)                  !!\n"
-			"!!  ENERGY UNIT (a.e.u)  :  a.m.u * (A / ps) ** 2 = 0.01 kJ /mol       !!\n"
+			"!!  MEASURE UNITS  :  A(length), ps(time), a.m.u.(mass), e(charge),    !!\n"
+			"!!     K(temperature), kJ/mol(energy)                                  !!\n"
 			"!!                                                                     !!\n"
 			"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 		msg += _S("\n  Preprocessor directives used :");
@@ -579,39 +595,9 @@ namespace molkern
 		PRINT_MESSAGE(msg);
 	}
 
-	/// тип параметров, описывающих время модели
-	struct model_time_t
-	{
-		unsigned tm_;
-		model_time_t(unsigned t=0) : tm_(t) {}
-		operator unsigned() { return tm_; }
-		model_time_t &operator+=(unsigned dt) { tm_ += dt; return *this; }
-	};
-
-	INLINE model_time_t operator-(model_time_t t1, model_time_t t2)
-	{ return model_time_t(t1.tm_ - t2.tm_); }
-
-	extern model_time_t global_model_time; // текущее время для динамики (число fs)
-		// все процедуры могут считывать это значение, например, для печати
-		// но устаналивает время только одна функция (после завершения очередного
-		// цикла динамики)
-	extern time_t global_real_start_time; // физическое время начала динамики
-	extern time_t global_real_prev_time;
-
-	/// возвращает текущее время модели
-	INLINE model_time_t current_model_time() { return global_model_time; }
-
-	/// функция извлекает из глобального счетчика текущее время для динамики
-	INLINE std::string make_string(model_time_t)
-	{
-		model_time_t tm = current_model_time();
-		unsigned ns = tm / 1000000;
-		unsigned ps = tm % 1000000 / 1000;
-		unsigned fs = tm % 1000;
-		return make_string("%3d,%03d'%03d ns", ns, ps, fs);
-	}
-
-	extern unsigned global_thread_count; //число потоков
+	extern model_timer_t global_model_time;   // счетчик времени динамики
+	extern system_time_t global_start_time;   // физическое время старта динамики
+	extern unsigned global_thread_count;      // число потоков
 	extern real_t global_rskin_width;
 	extern real_t global_compress_factor;
 
@@ -621,18 +607,13 @@ namespace molkern
 
 	/// coefficient to transform cal -> J
 	const real_t CAL2J = (real_t) 4.184; // US cal
-	const real_t CAL2AUE = (real_t) 418.4; // US cal
-		// AUE атомная единица энергии (а.е.м. * ангстрем**2 / пс**2)
-
-	const real_t J2CAL = (real_t) (1. / CAL2J); // US cal
-
-	const real_t AUE_BOLTZMAN = (real_t) 8.314510e-1; // AUE/(mol*K)
+	const real_t BOLTZMAN = (real_t) 8.314510e-3; // [kJ/mol] * 1/[K]
 
 	template <typename T>
-	INLINE T KT(T temperature) { return (T)(AUE_BOLTZMAN * temperature); }
+	INLINE T KT(T temperature) { return (T)(BOLTZMAN * temperature); }
 
 	template <typename T>
-	INLINE T Temperature(T energy) { return  (T)(energy / AUE_BOLTZMAN); }
+	INLINE T Temperature(T energy) { return  (T)(energy / BOLTZMAN); }
 
 	const bool NO_PERIODIC_ = false; // флаг отсутствия пространственной периодичности системы
 	const bool YES_PERIODIC_ = true; // флаг пространственной периодичности системы
@@ -640,26 +621,59 @@ namespace molkern
 	const bool NO_CLASHES = false; // флаг запрета клеширования
 	const bool YES_CLASHES = true; // флаг разрешения клеширования
 
-	/// нормальная температура
-	const real_t DEFAULT_TARGET_TEMPERATURE = (real_t) 300.; // 309.6 = 36.6 C
+	const real_t DEFAULT_ABS_ZERO_TEMPERATURE =-273.15; // абсолютный нуль
+	const char* const DEFAULT_ENSEMBLE        = "NVT";  //
+	const real_t DEFAULT_TEMPERATURE          = 300.;   // [K]
+	const real_t DEFAULT_PRESSURE             = 1.0;    // [atm]
+	const real_t DEFAULT_ENERGY               = 0.0;    // [kJ/mol]
 
-	/// максимально разрешенное смещение во время динамики
-	const real_t DEFAULT_MAX_X = (real_t) 0.2; // [A]
+	const int    DEFAULT_THREAD_NUMBER        = 1;      // "число потоков"
+	const real_t DEFAULT_CUTOFF               = 10.0;   // "радиус обрезания потенциала")
+	const real_t DEFAULT_SKIN_WIDTH           = 0.6;    // "ширина скин оболочки для iVT метода"
+	const real_t DEFAULT_COMPRESS_COEF        = 3.0;    // "среднее число сжимаемых рядов в ciVT методе"
+	const real_t DEFAULT_BARRIER              = 2000.0; //
+	const real_t DEFAULT_FFTW_STEP            = 0.1;    // [A]
+	const real_t DEFAULT_INTEGRATION_TIME     = 0.002;  // [ps]
+	const real_t DEFAULT_RELAXATION_TIME      = 0.4;    // [ps]
+	const real_t DEFAULT_PRINT_TIME           = 0.1;    // [ps]
+	const real_t DEFAULT_AVERAGE_TIME         = 0.1;    // [ps]
+	const real_t DEFAULT_COUPLING_T_COEF      = 1.;     //
+	const real_t DEFAULT_COUPLING_P_COEF      = 10.;    //
+	const real_t DEFAULT_MAX_DISPACEMENT      = 0.2;    // [A] максимально разрешенное смещение во время динамики
 
-	const real_t ELECTRIC_FACTOR = (real_t) 138935.485;
-		// 1 / (4 pi e0) [AUE * A / (mol e^2)]
+	const int NORMAL_PH_WATER                 = 7;      // стандартная кислотность
+	const real_t NORMAL_WATER_DENSITY         = 0.033427; // [молекул (!) в ангстрем **3]
+	const real_t NORMAL_PARTICLE_DENSITY      = 0.100284; // [атомов (!) в ангстрем **3]
+		// используется для приблизительного узнавания размеров массивов
+
+	/*
+	 * В программе заряды и массы корректируются на соответствующие множители таким образом,
+	 * чтобы вычисления энергий (потенциальной и кинетической) вычислялись наиболее естественным
+	 * способом, то есть U = q * q / r и K = (m/2) * v**2. Иначе естественно забыть в том или ином
+	 * месте нужный коэффициент перевода.
+	 * При этом эти формулы дают значения энергий в елиницах [kJ/mol].
+	 *
+	 * Недостатком этого подхода является то, что заряды и массы трудно отслеживать в дебаг-режиме.
+	 * Нужно помнить, что их нужно переводить. Для этого написаны функции ExtCharge и ExtMass, чтобы
+	 * получать верные их значения. Также любой заряд и масса считываемая внутрь программы должна быть
+	 * корректирована во внутреннее представление через функции IntCharge, IntMass.
+	 *
+	 */
+	const real_t ELECTRIC_FACTOR = (real_t) 1389.35485;
 	const real_t SQRT_ELECTRIC_FACTOR = (real_t) sqrt(ELECTRIC_FACTOR);
+	const real_t KINETIC_FACTOR = (real_t) 0.01;
+
+	INLINE real_t ExtCharge(real_t charge) { return charge / SQRT_ELECTRIC_FACTOR; }
+	INLINE real_t IntCharge(real_t charge) { return charge * SQRT_ELECTRIC_FACTOR; }
+	INLINE real_t ExtMass(real_t mass) { return mass / KINETIC_FACTOR; }
+	INLINE real_t IntMass(real_t mass) { return mass * KINETIC_FACTOR; }
 
 	const real_t DIELECTRIC_WATER = (real_t) 78.5;
 	const real_t DIELECTRIC_PROTEIN = (real_t) 4.0;
 
 	/// коэффициент перевода из [kJ /mol A**3] в число атмосфер
-	const real_t ATMOSPHERE_FACTOR = (real_t) 16388.5070058; //????
-
-	/// the normal condition pH of water
-	const int NORMAL_PH_WATER = 7;
-	//const real_t NORMAL_WATER_DENSITY = 0.03345; // [молекул (!) в ангстрем **3]
-	const real_t NORMAL_WATER_DENSITY = 0.10035; // [частиц (!) в ангстрем **3]
+	const real_t ATMOSPHERE_FACTOR = (real_t) 16388.5070058;
+	INLINE real_t Pressure(real_t pressure) { return pressure * ATMOSPHERE_FACTOR; }
 
 	/// standard radius of water molecule
 	const real_t RADIUS_H2O = (real_t) 1.4; // Angstrom
@@ -737,6 +751,9 @@ namespace molkern
 		#define USES_EQUIVALENTS(ndx, index__)
 	#endif
 
+	#define RETURN_REF(arr, i) assert(_LT((unsigned)i, arr.size())); return arr[i];
+	#define RETURN_ADDR(arr, i) assert(_LT((unsigned)i, arr.size())); return &arr[i];
+
 	#define DEFINE_VECTOR_ACCESS_FUNCTION(name, type, array) \
 		unsigned count(_I2T<name>) const { return (unsigned)array.size(); } \
 		\
@@ -761,14 +778,6 @@ namespace molkern
 
 #undef DEFINE_TAG_LOGICAL_CONST
 
-
-	// таймеры для функций
-	enum { READ_TIMER_=1000, SAVE_TIMER_, RUN_TIMER_, RUNV_TIMER_, NEAR_TIMER_, BUILD_TIMER_, CALC_TIMER_,
-		GON_TIMER_, FILTER_TIMER_, BUILD2_TIMER_, TIMER_1, TIMER_2, TIMER_3, TIMER_4, TIMER_5, TIMER_6, TIMER_7, TIMER_8};
-
-	extern unsigned wwww;
-	extern long long unsigned global_pair;
-
 	/**
 	 * Объект позволяет унифицированно подключать любой расчетчик ближних взаимодействий
 	 */
@@ -776,7 +785,7 @@ namespace molkern
 	class near_range_integrator
 	{
 	public:
-
+		virtual ~near_range_integrator(){}
 		virtual void resize(real_t rcut, real_t density) = 0;
 		virtual void update(bool print=NO_PRINT) = 0;
 		virtual _E(real_t) dU__dX() = 0;

@@ -79,11 +79,15 @@ namespace prgkern
 		index_ &operator=(const index_ &ndx)
 		{ ::memcpy(this, &ndx, sizeof(ndx)); return *this; }
 
+		index_ &operator=(T s)
+		{ for_<0, N>::expand(bll::_1 = s, ndx_); return *this; }
+
 		T operator[](unsigned i) const { _A(i); return ndx_[i]; }
 		T &operator[](unsigned i) { _A(i); return ndx_[i]; }
 
 		bool operator==(const index_ &ndx) const
-		{ return ::memcmp(this, &ndx, sizeof(ndx)); }
+		{ return ::memcmp(this, &ndx, sizeof(ndx)) == 0; }
+
 		bool operator!=(const index_ &ndx) const { return !(*this==ndx); }
 
 		void clear() { ::memset(&ndx_[0], 0, sizeof(ndx_)); }
@@ -94,6 +98,54 @@ namespace prgkern
 
 	#undef _A
 	};
+
+	template <typename T>
+	index_<2, T> increment(const index_<2, T> &max, const index_<2, T> &pos)
+	{
+		index_<2, T> newpos(pos);
+		if (++newpos[1] == max[1])
+		{
+			++newpos[0];
+			newpos[1] = 0;
+		}
+		return newpos;
+	}
+
+	template <typename T>
+	index_<3, T> increment(const index_<3, T> &max, const index_<3, T> &pos)
+	{
+		index_<3, T> newpos(pos);
+		if (++newpos[2] == max[2])
+		{
+			if (++newpos[1] == max[1])
+			{
+				++newpos[0];
+				newpos[1] = 0;
+			}
+			newpos[2] = 0;
+		}
+		return newpos;
+	}
+
+	template <typename T>
+	index_<4, T> increment(const index_<4, T> &max, const index_<4, T> &pos)
+	{
+		index_<4, T> newpos(pos);
+		if (++newpos[3] == max[3])
+		{
+			if (++newpos[2] == max[2])
+			{
+				if (++newpos[1] == max[1])
+				{
+					++newpos[0];
+					newpos[1] = 0;
+				}
+				newpos[2] = 0;
+			}
+			newpos[3] = 0;
+		}
+		return newpos;
+	}
 
 	/*
 	* @note this way produces bad ordering with negative indexes

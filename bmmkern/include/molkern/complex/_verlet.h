@@ -5,6 +5,9 @@
 #include "molkern/complex/_parallel.h"
 #include "molkern/complex/_region.h"
 
+/// определяется при тестировании Верлет таблицы, требует огромного количества времени
+// #define VERLET_DEBUG
+
 namespace molkern
 {
 	using namespace prgkern;

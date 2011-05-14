@@ -206,6 +206,16 @@ namespace molkern
 		if (calc_type_ & CALC_PAIR14_) energy += archetype_->U(PAIR14, atoms, &free_pair14s_[0],
 					&free_pair14s_[0] + free_pair14s_count_, make_print);
 
+		unsigned freedom_count = count(FREEDOM);
+		if (make_print)
+		{
+			real_t average = (real_t) (freedom_count ? energy / freedom_count : 0.);
+			std::string msg
+				= make_string("  U/total  / (%10d) : %10.3e", freedom_count, (float)energy)
+				+ make_string("   <U> : %10.3e", (float)average);
+			PRINT_MESSAGE(msg);
+		}
+
 		return energy;
 	}
 

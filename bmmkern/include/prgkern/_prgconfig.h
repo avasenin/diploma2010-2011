@@ -36,6 +36,7 @@
 	#endif
 
 	#define INLINE inline __attribute__((__always_inline__))
+	#include <stdint.h>
 #else
 	#define INLINE inline
 #endif

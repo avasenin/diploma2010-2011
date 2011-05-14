@@ -124,6 +124,15 @@ namespace molkern
 		return cm;
 	}
 
+	template <typename Atom, typename Iterator>
+	INLINE vector_t	calculate_center_of_mass(const Atom *atom, Iterator it, Iterator ite)
+	{
+		vector_t cm = 0.; real_t mass = 0., m;
+		for (; it!=ite; ++it) { m = atom[*it]->mass; mass += m; cm += (atom[*it].X) * m; }
+		cm *= (1./ mass);
+		return cm;
+	}
+
 	/**
 	*   Рассчитывает наибольший Ван-дер-Ваальсовый радиус в группе атомов.
 	* @param molecule молекула (комплекс)

@@ -53,9 +53,12 @@ namespace molkern
 		ljatom.charge = 0.f;
 		ljatom.sigma = 1.f;
 		ljatom.eps = 0.f;
-		ljatom.x = *(const real_t *)&atom->X[0] + vreal_t(0.1f, 0.0f, 0.0f, 0.1f);
-		ljatom.y = *(const real_t *)&atom->X[1] + vreal_t(0.0f, 0.1f, 0.0f, 0.1f);
-		ljatom.z = *(const real_t *)&atom->X[2] + vreal_t(0.0f, 0.0f, 0.1f, 0.1f);
+		ljatom.x = *(const real_t *)&atom->X[0] + vreal_t(0.5f, 0.0f, 0.0f, 0.5f);
+		ljatom.y = *(const real_t *)&atom->X[1] + vreal_t(0.0f, 0.5f, 0.0f, 0.5f);
+		ljatom.z = *(const real_t *)&atom->X[2] + vreal_t(0.0f, 0.0f, 0.5f, 0.5f);
+			// Разводим в стороны координаты первых 4-х атомов в "empty". Разводить можно разными
+			// путями, например, добавляя вектор трансляции.
+
 		ljatom.fx = 0.f;
 		ljatom.fy = 0.f;
 		ljatom.fz = 0.f;
@@ -109,14 +112,36 @@ namespace molkern
 		atom.fx = ror1(atom.fx);
 		atom.fy = ror1(atom.fy);
 		atom.fz = ror1(atom.fz);
+		atom.hash = ror1(atom.hash);
+	}
+	INLINE void rol1(__LJAtom<vecreal_<4, real_t>, vecint_ <4, int> > &atom)
+	{
+		atom.connect_data = rol1(atom.connect_data);
+		atom.insert_data = rol1(atom.insert_data);
+		atom.x = rol1(atom.x);
+		atom.y = rol1(atom.y);
+		atom.z = rol1(atom.z);
+		atom.charge = rol1(atom.charge);
+		atom.sigma = rol1(atom.sigma);
+		atom.eps = rol1(atom.eps);
+		atom.fx = rol1(atom.fx);
+		atom.fy = rol1(atom.fy);
+		atom.fz = rol1(atom.fz);
+		atom.hash = rol1(atom.hash);
 	}
 #else
 	INLINE void ror1(__LJAtom<vecreal_<1, real_t>, vecint_ <1, int> > &atom)
 	{
 	}
+	INLINE void rol1(__LJAtom<vecreal_<1, real_t>, vecint_ <1, int> > &atom)
+	{
+	}
 #endif
 
 	INLINE void ror1(__LJAtom<real_t, int> &atom)
+	{
+	}
+	INLINE void rol1(__LJAtom<real_t, int> &atom)
 	{
 	}
 
@@ -351,9 +376,10 @@ namespace molkern
 		* @param x {x,y,z,0} вектор
 		* @return хэш код вектора x
 		*/
+#ifdef USE_GONNET
 		static real_t make_hash(unsigned direction, vecreal_<4, real_t> x)
 		{ return summarize(gonnet_coefs[direction] * x); }
-
+#endif
 		/// делает код направления по вектору направления
 		static unsigned make_direction_code(const vector_t &d)
 		{
@@ -604,11 +630,25 @@ namespace molkern
 			resize(sz, h_, 0, YES_PRINT);
 		}
 
+		/*
+		 * Увеличивает (уменьшает) размер ящика и область взаимодействия в заданное число раз
+		 */
+		void rescale(real_t scale)
+		{
+			h_ *= scale;
+			_1h_ /= scale;
+			T_ *= scale;
+			_1T_ *= (1. / scale);
+			t_ = vecreal_<4, real_t>(T_[0], T_[1], T_[2], real_t(0.));
+			_1t_ = vecreal_<4, real_t>(_1T_[0],  _1T_[1],  _1T_[2], real_t(0.));
+		}
+
 		/// Очистка области от атомов.
 		void clear() { for (unsigned i=0,sz=nodes_.size(); i<sz; i++) nodes_[i].clear(); }
 
 		/// текущий ящик области
 		_Box get(_I2T<BOX_>) const { return _Box(vector_t(0.,0.,0.), T_); }
+		real_t volume() const { return T_[0] * T_[1] * T_[2]; }
 
 		/// размерности текущего ящика области
 		index_type box_size() const { return sz_; }
@@ -616,11 +656,11 @@ namespace molkern
 		bool is_edge(unsigned pos1, unsigned pos2) const
 		{
 			_Index key = nodes_[pos1].index();
-			if ( (key[0] == (int)sz_[0] - 1) || (key[1] == (int)sz_[1] - 1) || (key[2] == (int)sz_[2] - 1)
+			if ( (key[0] == sz_[0] - 1) || (key[1] == sz_[1] - 1) || (key[2] == sz_[2] - 1)
 		  ) return true;
 
 			key = nodes_[pos2].index();
-			if ( (key[0] == (int)sz_[0] - 1) || (key[1] == (int)sz_[1] - 1) || (key[2] == (int)sz_[2] - 1)
+			if ( (key[0] == sz_[0] - 1) || (key[1] == sz_[1] - 1) || (key[2] == sz_[2] - 1)
 		  ) return true;
 
 			return false;
@@ -818,7 +858,7 @@ namespace molkern
 		if (sz[1] < 3) sz[1] = 3;
 		if (sz[2] < 3) sz[2] = 3;
 
-		if (sz_[0] == sz[0] && sz_[1] == sz[1] && sz_[2] == sz[2]) return;
+		if (sz_[0] >= sz[0] && sz_[1] >= sz[1] && sz_[2] >= sz[2]) return;
 
 		if (is_print)
 		{

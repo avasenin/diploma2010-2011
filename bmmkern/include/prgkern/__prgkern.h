@@ -50,4 +50,5 @@
 #include "prgkern/_v3dense.h"
 #include "prgkern/_vdense.h"
 #include "prgkern/_sse.h"
+#include "prgkern/_ieee754.h"
 
