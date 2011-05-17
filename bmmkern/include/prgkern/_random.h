@@ -26,6 +26,11 @@
 
 #include "prgkern/_prgconfig.h"
 
+#ifdef USE_LINUX_SPECIFIC_CODE
+	#include <sys/time.h>
+	#include <sys/utsname.h>
+#endif
+
 namespace prgkern
 {
 	/**
@@ -57,7 +62,7 @@ namespace prgkern
 		}
 
 		template <typename T>
-		T operator()(T max=1., T min=0.) { return min + make_<T>() * (max-min); }
+		T operator()(T max=1, T min=0) { return (T)(min + make_() * (max-min)); }
 			// использовать обратный порядок [min, max] безопасно
 			// как плюс, это дает возможность вызывать функцию с одним параметром
 
@@ -68,13 +73,12 @@ namespace prgkern
 		*/
 		long seed_ctrl_(long s)	{	return s == RAN0_MASK ? s : s ^ RAN0_MASK; }
 
-		template <typename T>
-		T make_()
+		double make_()
 		{
 			long k = idum_ / 127773;
 			idum_ = 16807 * (idum_ - k * 127773) - 2836 * k;
 			if (idum_ < 0) idum_ += (RAN0_MAX + 1);
-			return (T)(idum_ / (RAN0_MAX + 1.0));
+			return ((double)idum_) / (RAN0_MAX + 1);
 		}
 
 	private:
@@ -123,7 +127,7 @@ namespace prgkern
 		}
 
 		/// коэффициент нормировки распределения
-		_Real norm() { return 1. / (M_SQRT_2PI * _Base::sigma()); }
+		_Real norm() { return 1. / (sqrt(M_PI + M_PI) * _Base::sigma()); }
 
 	};
 	typedef boost::rand48 rand48;

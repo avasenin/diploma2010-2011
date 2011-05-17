@@ -20,6 +20,7 @@
 #include <ctime>
 
 #include "molkern/__config.h"
+#include "molkern/forcefield/_rapple_goddard_params.h"
 #include "molkern/forcefield/_fparams.h"
 #include "molkern/forcefield/_forcefield.h"
 #include "molkern/forcefield/_forcefield_amber.h"
@@ -41,15 +42,17 @@
 #include "molkern/complex/_verlet.h"
 #include "molkern/complex/_linkcell.h"
 #include "molkern/complex/_protonization.h"
+#include "molkern/complex/_water.h"
 #include "molkern/complex/_molecule.h"
 #include "molkern/complex/_complex.h"
 #include "molkern/complex/_optimize.h"
+#include "molkern/complex/_charge_optimize.h"
 #include "molkern/complex/_geom_tool.h"
 #include "molkern/complex/_phys_tool.h"
 #include "molkern/complex/_ensemble.h"
 #include "molkern/complex/_thermostat.h"
-#include "molkern/complex/_mdynamics.h"
-
+#include "molkern/complex/_mdintegrator.h"
+#include "molkern/complex/_coulomb_params.h"
 //---------------------------------------------------------------------------------------------------
 //             снятие всех определений после использования в библиотеке MOLKERN
 //---------------------------------------------------------------------------------------------------

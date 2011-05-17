@@ -45,7 +45,8 @@ namespace molkern
 		typedef Interaction                                 _Interaction;
 		typedef typename _Archetype::atom_type              _Atomdata;
 		typedef typename _Archetype::chain_type             _Chain;
-		typedef typename _Archetype::rotamer_type           _Rotamer;
+		typedef typename _Archetype::bond_type              _Bond;
+                typedef typename _Archetype::rotamer_type           _Rotamer;
 		typedef std::pair<unsigned, unsigned>               _Pair;
 		typedef Box_<3, real_t>                             _Box;
 		typedef Molecule_<_Archetype>                       _Molecule;
@@ -64,18 +65,19 @@ namespace molkern
 			// требуется рассчитывать 1-4 взаимодействия).
 
 			vector_t X; ///< текущая координата атома
+			bool includedToActiveSite;
 			real_t charge; ///< текущий заряд атома в единицах [a.u.q] * sqrt(ELECTRIC_FACTOR)
 			real_t sigma; ///< параметр LJ 6-12 + 1-4 взаимодействия
 			real_t eps; ///< параметр LJ 6-12 + 1-4 взаимодействия
 			unsigned_t connect_data; ///< таблица коннектов атома
 			unsigned_t insert_data; ///< тип вставки атома
 
-			vector_t V; ///< скорость атома
-				// поле V описывает точку в конфигурационном пространстве {X,V}
 			vector_t F; ///< частичные силы от невалентных взаимодействий
 				// используем расширенный тип (?), чтобы суммировать множество торсионных
 				// вкладов без потери точности
 				// поле F требуется для оптимизатора и для расчета вириала
+			vector_t V; ///< скорость атома
+				// поле V описывает точку в конфигурационном пространстве {X,V}
 
 			const _Atomdata *atomdata; ///< ссылка на основные параметры атома
 					// заметим, что есть дублирование для полей sigma, eps и connect_data (они
@@ -93,7 +95,7 @@ namespace molkern
 			void make(const _Atomdata &atomdata, unsigned_t atom_id)
 			{
 				X = atomdata.X;
-				charge = atomdata.charge * SQRT_ELECTRIC_FACTOR; // избегаем операции ELECTRIC_FACTOR
+				charge = atomdata.charge;
 				sigma = atomdata.sigma;
 				eps = (real_t) sqrt(atomdata.eps); // избегаем операции sqrt(epa1 * eps2) в E(VdW)
 				connect_data = atomdata.connect_data;
@@ -116,7 +118,8 @@ namespace molkern
 		{
 			// Основные поля, необходимые для вычислений.
 			vector_t X; ///< текущая координата атома
-			real_t charge; ///< текущий заряд атома в единицах [a.u.q] * sqrt(ELECTRIC_FACTOR)
+
+                        real_t charge; ///< текущий заряд атома в единицах [a.u.q] * sqrt(ELECTRIC_FACTOR)
 			real_t sigma; ///< параметр LJ 6-12 + 1-4 взаимодействия
 			real_t eps; ///< параметр LJ 6-12 + 1-4 взаимодействия
 
@@ -162,9 +165,12 @@ namespace molkern
 		enum { dimension = 3 };
 
 		typedef _Atom           atom_type;
+                typedef _Bond           bond_type;
+                typedef _Atomdata       atomdata_type;
 		typedef _LJAtom         ljatom_type;
 		typedef real_t          real_type;
 		typedef _Archetype      archetype_type;
+		typedef _Molecule       molecule_type;
 		typedef _Chain          chain_type;
 		typedef _Rotamer        rotamer_type;
 		typedef _Region         region_type;
@@ -173,15 +179,16 @@ namespace molkern
 		*  Конструирование пустого объекта. Параметры передаются как указатели на
 		*  константные объекты, за исключением объекта region, размеры которого
 		*  комплекс может менять.
-		* @param box область взаимодействия
+		* @param conf полный описатель симуляции
 		* @param forcefield силовое поле
 		* @param residome топология
 		* @param atom_count приблизительное число атомов (для резервирования памяти)
 		*/
-		Complex_(const _Forcefield *forcefield, const _Residome *residome, _Region *region,
-			int pH=NORMAL_PH_WATER, real_t density=NORMAL_WATER_DENSITY)
-		: forcefield_(forcefield), residome_(residome),
-			region_(region), pH_(pH), density_(density)
+		Complex_(const Configure *conf, const _Forcefield *forcefield, const _Residome *residome)
+		: configure_   (conf)
+		, forcefield_  (forcefield)
+		, residome_    (residome)
+		, region_      (conf->box, conf->cutoff_radius)
 		{
 #ifdef USE_VERLET_TABLE
 			nr_integrator_ = new _Verlet(this);
@@ -192,6 +199,16 @@ namespace molkern
 
 		~Complex_()
 		{
+			// сохраним результат в файле, если он описан
+			_S s = FILE_NAME_REGEX.get_match(configure_->outfile);
+			if (s != _S(""))
+			{
+				_S filename = configure_->work_dir + s;
+				bool prn_water = PRN_WATER_REGEX.is_match(configure_->outfile);
+				bool prn_hydrogens = PRN_HYDROGEN_REGEX.is_match(configure_->outfile);
+				save(filename, prn_water, prn_hydrogens);
+			}
+
 			for (unsigned i=0,sz=archetypes_.size(); i<sz; i++) delete archetypes_[i];
 			for (unsigned i=0,sz=molecules_.size(); i<sz; i++) delete molecules_[i];
 			delete nr_integrator_;
@@ -205,7 +222,7 @@ namespace molkern
 		* @param altpos альтернативная позиция загрузки атомов (для *.pdb)
 		* @return идентификатор загруженного образца молекулы или -1
 		*/
-		int load(_I2T<MOLECULE_>, const std::string &filename, unsigned freedom_type,
+		int load(_I2T<ARCHETYPE_>, const std::string &filename, unsigned freedom_type,
 			unsigned count, char altpos='A');
 		int load(_I2T<WATER_>, const std::string &solution, unsigned freedom_type);
 
@@ -232,6 +249,8 @@ namespace molkern
 		template <int FORMAT> void save(_I2T<FORMAT>, std::ofstream &file, bool prn_water=false,
 			bool prn_hydrogens=true, const std::string &header=_S("")) const
 		{
+			write_header(_I2T<FORMAT>(), file, header);
+
 			const _Atom *atoms__ = &atoms_[0];
 			for (unsigned iarchetype=0,sz=archetypes_.size(); iarchetype<sz; iarchetype++)
 			{
@@ -254,6 +273,7 @@ namespace molkern
 		* @param iterations число итераций размещения каждой молекул при клешировании
 		*/
 		void build(bool enable_clash, unsigned iterations=DEFAULT_DISPOSE_ITERATIONS);
+		void build();
 
 		/**
 		* @brief energy & derivations of entire complex
@@ -262,19 +282,29 @@ namespace molkern
 		_E(real_t) dU__dX();
 		_E(real_t) dU__dX(_I2T<POSITION_>);
 
+		unsigned        count(_I2T<ARCHETYPE_>)               const { return (unsigned)archetypes_.size(); }
+		const _Archetype *get(_I2T<ARCHETYPE_>, unsigned i=0) const { RETURN_REF(archetypes_, i); }
+		      _Archetype *get(_I2T<ARCHETYPE_>, unsigned i=0)       { RETURN_REF(archetypes_, i); }
+
+		unsigned        count(_I2T<MOLECULE_>)               const { return (unsigned)molecules_.size(); }
+		//const _Archetype *get(_I2T<MOLECULE_>, unsigned i=0) const { RETURN_REF(molecules_, i); }
+					//_Archetype *get(_I2T<MOLECULE_>, unsigned i=0)       { RETURN_REF(molecules_, i); }
+
+		real_t get(_I2T<POTENT_ENERGY_>) const { return potential_energy_; }
+		real_t get(_I2T<VOLUME_>) const { return region_.volume(); }
+
 		/**
 		* @brief extracts data
 		*/
-		DEFINE_VECTOR_ACCESS_FUNCTION(ARCHETYPE_, _Archetype, archetypes_);
-		DEFINE_VECTOR_ACCESS_FUNCTION(MOLECULE_,  _Molecule,  molecules_ );
+                void findActiveSite();
+                const std::vector<_Molecule*>& get(_I2T<MOLECULE_>) const { return molecules_; };
 		DEFINE_VECTOR_ACCESS_FUNCTION(ATOM_,      _Atom,      atoms_     );
-
 		DEFINE_VECTOR_ACCESS_FUNCTION(XPOSITION_, real_t, x_);
 		DEFINE_VECTOR_ACCESS_FUNCTION(GPOSITION_, real_t, g_);
 
-		_Box get(_I2T<BOX_>) const { return region_->get(BOX); }
-		const _Region *get(_I2T<REGION_>) const { return region_; }
-		_Region *get(_I2T<REGION_>) { return region_; }
+		_Box get(_I2T<BOX_>) const { return region_.get(BOX); }
+		const _Region *get(_I2T<REGION_>) const { return &region_; }
+		_Region *get(_I2T<REGION_>) { return &region_; }
 
 		//----------------------------------------------------------------------------------------
 		//                         функции для работы с ротамерами
@@ -289,6 +319,13 @@ namespace molkern
 				atom.V = v[i];
 			}
 		}
+                unsigned read(_I2T<CHARGE_>, const real_t *charges, _Atom *atoms)
+                {
+                        unsigned cnt = 0;
+                        for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
+                                cnt += molecules_[i]->read(CHARGE, charges + cnt, atoms + atom_start_[i]);
+                        return cnt;
+                }
 
 		unsigned read(_I2T<POSITION_>, const real_t *x, _Atom *atoms)
 		{
@@ -347,12 +384,6 @@ namespace molkern
 		const_array_iterator<_Atom, _Iterator> make_iterator(_Iterator it) const
 		{ return const_array_iterator<_Atom, _Iterator>(&atoms_[0], it); }
 
-
-//	#ifdef USE_VERLET_TABLE
-//		unsigned count(_I2T<REBUILD_>) const { return vt_.count(REBUILD); }
-//		real_t average(_I2T<RSKIN_>) const { return vt_.average(RSKIN); }
-//	#endif
-
 	protected:
 
 		/**
@@ -371,6 +402,8 @@ namespace molkern
 		*/
 		boost::tuple<vector_t, vector_t> dispose_(_I2T<MOLECULE_>, const _Box &box, unsigned iarchetype,
 			vector_t *X, bool enable_rotation, bool enable_clash, unsigned iterations);
+		boost::tuple<vector_t, vector_t> dispose_(_I2T<MOLECULE_>, const _Box &box, unsigned iarchetype,
+			vector_t *X);
 
 		/**
 		*  (Пере)заполнение грида атомами и прямой расчет энергий и сил пар.
@@ -380,15 +413,14 @@ namespace molkern
 
 	private:
 
-		const _Forcefield *forcefield_; // указатель на силовое поле
-		const _Residome *residome_; // указатель на топологию
-		_Region *region_; // область взаимодействия
-		int pH_; // pH раствора
-		real_t density_; // плотность раствора (число молекул в 1 A**3)
+		const Configure     *configure_;   // описатель конфигурации
+		const _Forcefield   *forcefield_;  // указатель на силовое поле
+		const _Residome     *residome_;    // указатель на топологию
 
-		std::vector<_Archetype*> archetypes_; // указатели на типы молекул комплекса
-		std::vector<_Molecule*> molecules_;  // указатели на молекулы комплекса
-		std::vector<unsigned> atom_start_;  // стартовые номера атомов молекул в массиве атомов
+		mutable _Region region_;                // область взаимодействия
+		std::vector<_Archetype*> archetypes_;   // указатели на типы молекул комплекса
+		std::vector<_Molecule*> molecules_;     // указатели на молекулы комплекса
+		std::vector<unsigned> atom_start_;      // стартовые номера атомов молекул в массиве атомов
 
 		std::vector<std::vector<int> > am_matrix_;
 			// матрица, хранящая идентификаторы молекул для каждого архетипа
@@ -406,6 +438,9 @@ namespace molkern
 		std::vector<real_t> x_, g_; // массивы обобщенных координат для оптимизатора
 
 		near_range_integrator<Complex_> *nr_integrator_;
+		mutable real_t potential_energy_; // текущая потенциальная энергия комплекса
+
+		_Archetype *water_archetype;
 	};
 
 	#define TEMPLATE_HEADER  template <int FORCEFIELD_TYPE, int RESIDOME_TYPE>
@@ -413,7 +448,7 @@ namespace molkern
 
 	TEMPLATE_HEADER
 	inline int Complex_<TEMPLATE_ARG>
-	::load(_I2T<MOLECULE_>, const std::string &filename, unsigned freedom_type, unsigned count,
+	::load(_I2T<ARCHETYPE_>, const std::string &filename, unsigned freedom_type, unsigned count,
 		char altpos)
 	{
 		std::ifstream file(filename.c_str());
@@ -433,7 +468,7 @@ namespace molkern
 			// Так например, она не вращает протеин, который может иметь существенно разные размеры
 			// по разным осям, тем самым эта стратегия не увеличивает размеры задачи. Также для лигандов,
 			// которые обычно маленькие, она не делает вращений, так как они в любом случае попадают в ящик.
-			region_->enlarge(archetype->get(BOX));
+			region_.enlarge(archetype->get(BOX));
 
 			archetypes_.push_back(archetype);
 			am_matrix_.resize(archetype_id + 1); // зафиксируем наличие нового архетипа
@@ -476,26 +511,11 @@ namespace molkern
 		}
 		std::string ext = extension(filename);
 
-		if (ext == _S(".pdb") || ext == _S(".ent"))
-		{
-			write_header(_I2T<FORMAT_PDB_ >(), file, header);
-			save(_I2T<FORMAT_PDB_ >(), file, prn_water, prn_hydrogens, header);
-		}
-		else if (ext == _S(".hin") )
-		{
-			write_header(_I2T<FORMAT_HIN_ >(), file, header);
-			save(_I2T<FORMAT_HIN_ >(), file, prn_water, prn_hydrogens, header);
-		}
-		else if (ext == _S(".mol2"))
-		{
-			write_header(_I2T<FORMAT_MOL2_>(), file, header);
-			save(_I2T<FORMAT_MOL2_>(), file, prn_water, prn_hydrogens, header);
-		}
-		else if (ext == _S(".bmm"))
-		{
-			write_header(_I2T<FORMAT_BMM_ >(), file, header);
-			save(_I2T<FORMAT_BMM_ >(), file, prn_water, prn_hydrogens, header);
-		}
+		if      (ext == _S(".pdb" )) save(_I2T<FORMAT_PDB_ >(), file, prn_water, prn_hydrogens, header);
+		else if (ext == _S(".ent" )) save(_I2T<FORMAT_PDB_ >(), file, prn_water, prn_hydrogens, header);
+		else if (ext == _S(".hin") ) save(_I2T<FORMAT_HIN_ >(), file, prn_water, prn_hydrogens, header);
+		else if (ext == _S(".mol2")) save(_I2T<FORMAT_MOL2_>(), file, prn_water, prn_hydrogens, header);
+		else if (ext == _S(".bmm" )) save(_I2T<FORMAT_BMM_ >(), file, prn_water, prn_hydrogens, header);
 
 		SAVED_OK_MESSAGE(filename);
 	}
@@ -504,7 +524,7 @@ namespace molkern
 	INLINE void Complex_<TEMPLATE_ARG>
 	::write_header(_I2T<FORMAT_PDB_>, std::ofstream &file, const std::string &header) const
 	{
-		if (header.length() != 0) file << "HEADER    " << header << std::endl;
+		if (header.length() != 0) file << "HEADER " << header << std::endl;
 	}
 
 	TEMPLATE_HEADER
@@ -525,21 +545,29 @@ namespace molkern
 	INLINE void Complex_<TEMPLATE_ARG>
 	::write_header(_I2T<FORMAT_BMM_>, std::ofstream &file, const std::string &header) const
 	{
-		// сохраним ящик в целочисленном представлении
-		float radius = (float)_Interaction::interaction_radius();
-		file.write((char*)&radius, sizeof(float));
+		if (header.length() != 0)
+		{
+			// сохраним комментарий в начале файла
+			char header__[100];
+			::strncpy(header__, &header[0], 100);
+			file.write(header__, sizeof(char));
 
-		typename _Region::index_type boxsz = region_->box_size();
-		unsigned sx = (unsigned)boxsz[0];
-		unsigned sy = (unsigned)boxsz[1];
-		unsigned sz = (unsigned)boxsz[2];
-		file.write((char*)&sx, sizeof(unsigned));
-		file.write((char*)&sy, sizeof(unsigned));
-		file.write((char*)&sz, sizeof(unsigned));
+			// сохраним ящик в целочисленном представлении
+			float radius = (float)_Interaction::interaction_radius();
+			file.write((char*)&radius, sizeof(float));
 
-		// сохраним число атомов комплекса
-		unsigned atom_count = count(_I2T<ATOM_>());
-		file.write((char*)&atom_count, sizeof(unsigned));
+			typename _Region::index_type boxsz = region_.box_size();
+			unsigned sx = (unsigned)boxsz[0];
+			unsigned sy = (unsigned)boxsz[1];
+			unsigned sz = (unsigned)boxsz[2];
+			file.write((char*)&sx, sizeof(unsigned));
+			file.write((char*)&sy, sizeof(unsigned));
+			file.write((char*)&sz, sizeof(unsigned));
+
+			// сохраним число атомов комплекса
+			unsigned atom_count = count(_I2T<ATOM_>());
+			file.write((char*)&atom_count, sizeof(unsigned));
+		}
 	}
 
 	TEMPLATE_HEADER
@@ -559,7 +587,7 @@ namespace molkern
 			if (archetype->is_solution()) continue; // раствор размещаем в последнюю очередь
 			unsigned molecule_count = count(MOLECULE, iarchetype);
 
-			archetype->build(MOLECULE, pH_);
+			archetype->build(ARCHETYPE, configure_->pH);
 
 			unsigned nf = archetype->count(FREEDOM, archetype->get(FREEDOM_TYPE));
 			unsigned prev_xsize = x_.size();
@@ -572,7 +600,7 @@ namespace molkern
 			{
 				bool enable_rotation = (bool)imolecule; // нулевую молекулу не вращаем
 
-				boost::tuple<vector_t, vector_t> tuple__ = dispose_(MOLECULE, region_->get(BOX),
+				boost::tuple<vector_t, vector_t> tuple__ = dispose_(MOLECULE, region_.get(BOX),
 					iarchetype, &X[0], enable_rotation, enable_clash, iterations);
 
 				unsigned prev_atom_size = atoms_.size();
@@ -607,7 +635,7 @@ namespace molkern
 			_Archetype *archetype = archetypes_[iarchetype];
 			if (!archetype->is_solution()) continue; // молекулы построены выше
 
-			dispose_(WATER, region_->get(BOX), iarchetype, density_);
+			dispose_(WATER, region_.get(BOX), iarchetype, (configure_->get_interface(WATER)).density);
 
 			archetype->build(WATER);
 				// построение (связей, углов и т.д.) для всех вновь добавленных молекул воды
@@ -654,7 +682,7 @@ namespace molkern
 		real_t full_charge = 0.;
 		for (unsigned i=0,sz=atoms_.size(); i<sz; i++) full_charge += atoms_[i].charge;
 
-		full_charge /= SQRT_ELECTRIC_FACTOR; // коррекция к заряду в [a.e.q]
+		full_charge = ExtCharge(full_charge);
 		if (fabs(full_charge) > 0.5)
 		{
 			std::string msg = make_string("[WARNING] Full charge of molecule is %10.3f \n",
@@ -663,7 +691,134 @@ namespace molkern
 			PRINT_MESSAGE(msg);
 		}
 
-		nr_integrator_->resize(_Interaction::interaction_radius() + global_rskin_width, density_);
+		nr_integrator_->resize(_Interaction::interaction_radius() + global_rskin_width, NORMAL_PARTICLE_DENSITY);
+		nr_integrator_->update(YES_PRINT);
+                for (unsigned i=0; i<atoms_.size(); i++) {
+                  atoms_[i].X = atoms_[i].atomdata->X;
+                 // atoms_[i].charge = atoms_[i].atomdata->charge;
+                }
+        }
+
+	TEMPLATE_HEADER
+	inline void Complex_<TEMPLATE_ARG>
+	::build()
+	{
+		TIME_TESTING_START("", 1);
+		_S msg = _S("\nBuilding of complex is started ...");
+		PRINT_MESSAGE(msg);
+
+		//--------------------------------------------------------------------------
+		//         размещение молекул внутри ящика с возможным его ростом
+		//--------------------------------------------------------------------------
+		for (unsigned iarchetype=0,sz=archetypes_.size(); iarchetype<sz; ++iarchetype)
+		{
+			_Archetype *archetype = archetypes_[iarchetype];
+			if (archetype->is_solution()) continue; // раствор размещаем в последнюю очередь
+			unsigned molecule_count = count(MOLECULE, iarchetype);
+
+			archetype->build(ARCHETYPE, configure_->pH);
+
+			unsigned nf = archetype->count(FREEDOM, archetype->get(FREEDOM_TYPE));
+			unsigned prev_xsize = x_.size();
+			x_.resize(prev_xsize + nf * molecule_count, 0.f);
+			g_.resize(prev_xsize + nf * molecule_count, 0.f);
+
+			unsigned atom_count = archetype->count(ATOMDATA);
+			vector_t X[atom_count]; // позиция атомов вновь размещенной молекулы
+			for (unsigned imolecule=0; imolecule<molecule_count; ++imolecule)
+			{
+				boost::tuple<vector_t, vector_t> tuple__ = dispose_(MOLECULE, region_.get(BOX),
+					iarchetype, &X[0]);
+
+				unsigned prev_atom_size = atoms_.size();
+				atoms_.resize(prev_atom_size + atom_count);
+				const _Atomdata *atomdata = archetype->get(ATOMDATA);
+				for (unsigned i=0; i<atom_count; i++)
+				{
+					_Atom &atom = atoms_[prev_atom_size + i];
+					atom.make(atomdata[i], prev_atom_size + i);
+					atom.X = X[i];
+				}
+
+				unsigned prev_molecule_size = molecules_.size();
+
+				_Molecule *molecule = new _Molecule(archetype, archetype->get(FREEDOM_TYPE));
+				molecules_.push_back(molecule);
+				atom_start_.push_back(prev_atom_size);
+				am_matrix_[iarchetype][imolecule] = prev_molecule_size;
+
+				vector_t angle = vector_t(0., 0., 0.);
+				vector_t ranx = vector_t(0., 0., 0.);
+				real_t *x__ = &x_[prev_xsize + imolecule * nf]; // адрес записи обобщенных координат
+				unsigned freedom_type = archetype->get(FREEDOM_TYPE);
+				archetype->write_position(MOLECULE, x__, freedom_type, &atoms_[prev_atom_size], angle, ranx);
+			}
+		}
+		//--------------------------------------------------------------------------
+		//                  заполнение промежутков атомами раствора
+		//--------------------------------------------------------------------------
+		for (unsigned iarchetype=0,sz=archetypes_.size(); iarchetype<sz; ++iarchetype)
+		{
+			_Archetype *archetype = archetypes_[iarchetype];
+			if (!archetype->is_solution()) continue; // молекулы построены выше
+
+			dispose_(WATER, region_.get(BOX), iarchetype, (configure_->get_interface(WATER)).density);
+
+			archetype->build(WATER);
+				// построение (связей, углов и т.д.) для всех вновь добавленных молекул воды
+				// в отличие от молекулы, построение делается после размещения, поскольку
+				// размещение изменяет число объектов
+
+			const _Atomdata *atomdata = archetype->get(ATOMDATA);
+			unsigned atomdata_count = archetype->count(ATOMDATA);
+				// заново возьмем адрес, так как atomdata было перестроено в build(WATER)
+
+			// перекопируем все координаты
+			unsigned prev_atom_size = atoms_.size();
+			atoms_.resize(prev_atom_size + atomdata_count);
+			for (unsigned i=0; i<atomdata_count; i++)
+			{
+				_Atom &atom = atoms_[prev_atom_size + i];
+				atom.make(atomdata[i], prev_atom_size + i);
+				atom.X = atomdata[i].X;
+			}
+
+			unsigned prev_molecule_size = molecules_.size();
+			_Molecule *molecule = new _Molecule(archetype, archetype->get(FREEDOM_TYPE));
+			molecules_.push_back(molecule);
+			atom_start_.push_back(prev_atom_size);
+			am_matrix_[iarchetype][0] = prev_molecule_size;
+
+			unsigned nf = archetype->count(FREEDOM, archetype->get(FREEDOM_TYPE));
+			unsigned prev_xsize = x_.size();
+			x_.resize(prev_xsize + nf, 0.f);
+			g_.resize(prev_xsize + nf, 0.f);
+
+			real_t *x__ = &x_[prev_xsize]; // адрес записи обобщенных координат
+			unsigned freedom_type = archetype->get(FREEDOM_TYPE);
+			archetype->write_position(WATER, x__, freedom_type, &atoms_[prev_atom_size]);
+		}
+
+		msg = _S("Building of complex is finished ...");
+		PRINT_MESSAGE(msg);
+		TIME_TESTING_FINISH;
+
+		//--------------------------------------------------------------------------
+		//                    дополнительный контроль данных
+		//--------------------------------------------------------------------------
+		real_t full_charge = 0.;
+		for (unsigned i=0,sz=atoms_.size(); i<sz; i++) full_charge += atoms_[i].charge;
+
+		full_charge = ExtCharge(full_charge);
+		if (fabs(full_charge) > 0.5)
+		{
+			std::string msg = make_string("[WARNING] Full charge of molecule is %10.3f \n",
+				(float)full_charge);
+			msg += _S("  You must include some ions to avoid problems with far coulomb calculations");
+			PRINT_MESSAGE(msg);
+		}
+
+		nr_integrator_->resize(_Interaction::interaction_radius() + global_rskin_width, NORMAL_PARTICLE_DENSITY);
 		nr_integrator_->update(YES_PRINT);
 	}
 
@@ -687,7 +842,7 @@ namespace molkern
 		unsigned atoms_inside_box_count = 0; // число атомов, попавших в ящик
 		if (!enable_clash)
 		{
-			atoms_inside_box.reserve((unsigned) (DEFAULT_ATOM_DENSITY * box.volume()));
+			atoms_inside_box.reserve((unsigned) (NORMAL_PARTICLE_DENSITY * box.volume()));
 				// резервируем памяти на приблизительное количество атомов в области
 
 			for (unsigned i=0,sz=atoms_.size(); i<sz; i++)
@@ -773,7 +928,7 @@ namespace molkern
 			{
 				_S msg = make_string("%s<%s> has been posed inside of target box in %s",
 					archetype->name(_I2T<FILE_>()).c_str(),
-					archetype->name(_I2T<MOLECULE_>()).c_str(),
+					archetype->name(ARCHETYPE).c_str(),
 					make_string(ranx).c_str()
 				);
 				PRINT_MESSAGE(msg);
@@ -790,6 +945,31 @@ namespace molkern
 	}
 
 	TEMPLATE_HEADER
+	inline boost::tuple<vector_t, vector_t> Complex_<TEMPLATE_ARG>
+	::dispose_(_I2T<MOLECULE_>, const _Box &box, unsigned iarchetype, vector_t *X)
+	{
+		const _Archetype *archetype = archetypes_[iarchetype];
+		unsigned atom_count = archetype->count(_I2T<ATOM_>());
+		const _Atomdata *atomdata = archetype->get(ATOMDATA);
+
+		for (unsigned i=0; i<atom_count; i++) X[i] = atomdata[i].X;
+
+		// найдем ее ящик после вращения (в зависимости от формы молекулы он
+		// может меняться немного или сильно)
+		Box_<3, real_t> mol_box(vector_t(INFINITY), vector_t(-INFINITY));
+		for (unsigned i=0; i<atom_count; i++)
+		{
+			mol_box.bottom() = min(mol_box.bottom(), X[i]);
+			mol_box.top()    = max(mol_box.top(),    X[i]);
+		}
+		{
+			_S msg = make_string("molecule box is : %s", make_string(mol_box));
+			PRINT_MESSAGE(msg);
+		}
+		return boost::tuple<vector_t, vector_t>(0.f, 0.f);
+	}
+
+	TEMPLATE_HEADER
 	inline void Complex_<TEMPLATE_ARG>
 	::dispose_(_I2T<WATER_>, const _Box &box, unsigned iarchetype, real_t density)
 	{
@@ -800,7 +980,7 @@ namespace molkern
 		// соседей. Большой радиус не изменяет число молекул отмеченных для клеширования, но
 		// увеличивает время счета. Устанавливаем ящик с ячейками равными WATER_CLASH_RADIUS.
 
-		vector_t T = region_->translation_vector();
+		vector_t T = region_.translation_vector();
 		index_<3, unsigned> region_size
 		(
 			(unsigned)ceil(box.length(0) / WATER_CLASH_RADIUS),
@@ -816,7 +996,7 @@ namespace molkern
 		typedef typename _Region::region_vector_type  region_vector_t;
 		typedef typename _Region::region_key_type     region_key_t;
 
-		std::string molname = water_archetype->name(_I2T<MOLECULE_>());
+		std::string molname = water_archetype->name(ARCHETYPE);
 
 		const _Residue *residue = residome_->get_data(molname);
 		unsigned chain_count = residue->count(CHAIN);
@@ -828,8 +1008,8 @@ namespace molkern
 		{
 			// Генерим новый ящик для растворов, у которых в AMBER *.lib файле нет ящиков.
 			// Обычно это одиночные молекулы.
-			unsigned atom_count = residue->count(ATOM);
-			density /= atom_count; // плотность атомов кислорода, по которым мы отсекаем лишние
+			//unsigned atom_count = residue->count(ATOM);
+			//density /= atom_count; // плотность атомов кислорода, по которым мы отсекаем лишние
 				// молекулы меньше на соответствующий фактор
 
 			real_t len__ = 1. / pow(density, 1./3.);
@@ -1007,25 +1187,55 @@ namespace molkern
 	inline _E(real_t) Complex_<TEMPLATE_ARG>
 	::U(bool make_print) const
 	{
+		unsigned freedom_count = count(FREEDOM);
+		if (freedom_count == 0) return 0.;
+
+		PRINT_MESSAGE(_S("-------------------------------------------------------------------------------"));
+
 		_E(real_t) energy = 0.;
 		const _Atom *atoms__ = &atoms_[0];
 
 		for (unsigned i=0,sz=molecules_.size(); i<sz; i++)
 			energy += molecules_[i]->U(atoms__ + atom_start_[i], make_print);
 
-		unsigned nf = count(FREEDOM);
-		if (nf) energy += U_(_I2T<PAIR_>(), make_print);
+		PRINT_MESSAGE(_S("-------------------------------------------------------------------------------"));
+		energy += U_(_I2T<PAIR_>(), make_print);
 
+		// нормировка энергии на число степеней свободы при выводе
 		if (make_print)
 		{
-			// нормировка энергии на число степеней свободы при выводе
-			if (nf) { PRINT_MESSAGE(make_string("complex : nfreedom = %d,  energy = %12.5e,  "
-				"<energy/nfreedom> = %12.5e \n", nf, (float)energy, (float)(energy / nf))); }
-			else { PRINT_MESSAGE(make_string("complex : nfreedom = %d,  energy = %12.5e\n",
-				nf, (float)energy)); }
+			real_t average = (real_t) (freedom_count ? energy / freedom_count : 0.);
+			std::string msg
+				= make_string("  U/total  / (%10d) : %10.3e", freedom_count, (float)energy)
+				+ make_string("   <U> : %10.3e", (float)average);
+			PRINT_MESSAGE(msg);
 		}
+
+		potential_energy_ = energy;
 		return energy;
 	}
+
+        TEMPLATE_HEADER
+        INLINE void Complex_<TEMPLATE_ARG>
+        ::findActiveSite()
+        {
+          const _Archetype* ligand = molecules_[0]->archetype();
+          const _Archetype* protein = molecules_[0]->archetype();
+          _Atom *ligandAtoms = &atoms_[atom_start_[0]];
+          _Atom *proteinAtoms = &atoms_[atom_start_[1]];
+          for (unsigned ligandAtomIndex = 0; ligandAtomIndex < ligand->count(ATOM); ligandAtomIndex++)
+          {
+            for (unsigned proteinAtomIndex = 0; proteinAtomIndex < protein->count(ATOM); proteinAtomIndex++)
+            {
+              double r = distance1(ligandAtoms[ligandAtomIndex].X, proteinAtoms[proteinAtomIndex].X);
+              if (r < 7) //it's active site
+              {
+                ligandAtoms[ligandAtomIndex].includedToActiveSite = true;
+                proteinAtoms[proteinAtomIndex].includedToActiveSite = true;
+              }
+            }
+          }
+        }
 
 	TEMPLATE_HEADER
 	INLINE _E(real_t) Complex_<TEMPLATE_ARG>
@@ -1046,6 +1256,8 @@ namespace molkern
 			energy += molecules_[i]->dU__dX(atoms__ + atom_start_[i]);
 
 		energy += nr_integrator_->dU__dX();
+
+		potential_energy_ = energy; // сохраняем текущую энергию, так же как и силы
 		return energy;
 	}
 
@@ -1065,14 +1277,14 @@ namespace molkern
 		typedef typename _Region::region_vector_type  region_vector_t;
 		typedef typename _Region::region_key_type  region_key_t;
 
-		region_->clear(); // очистка от предыдущего расчета
+		region_.clear(); // очистка от предыдущего расчета
 		unsigned atom_count = atoms_.size();
 
 		_LJAtom ljatom;
 		for (unsigned i=0; i<atom_count; i++)
 		{
 			ljatom.make(atoms_[i]);
-			region_->insert(YES_PERIODIC, ljatom, atoms_[i].X);
+			region_.insert(YES_PERIODIC, ljatom, atoms_[i].X);
 		}
 
 		real_t rmax2 = sqr(_Interaction::interaction_radius());
@@ -1087,8 +1299,8 @@ namespace molkern
 
 		typedef typename _Node::const_iterator _Iterator;
 
-		unsigned node_count = region_->count(NODE);
-		const _Node *nodes = region_->get(NODE);
+		unsigned node_count = region_.count(NODE);
+		const _Node *nodes = region_.get(NODE);
 		for (unsigned pos=0; pos<node_count; pos++)
 		{
 			const _Node &node = nodes[pos];
@@ -1117,7 +1329,7 @@ namespace molkern
 							atom__.X[2] - atom.X[2]
 						);
 
-						region_->make_nearest_image_vector(R[0], R[1], R[2]);
+						region_.make_nearest_image_vector(R[0], R[1], R[2]);
 						real_t r2 = R.length2();
 
 						if (r2 > rmax2) continue;
@@ -1135,9 +1347,6 @@ namespace molkern
 								+ _S("] between atoms: \n")
 								+ make_string(atoms_[atom.insert_data], *atoms_[atom.insert_data].atomdata) + _S("\n")
 								+ make_string(atoms_[atom__.insert_data], *atoms_[atom__.insert_data].atomdata) + _S("\n");
-							PRINT_MESSAGE(msg);
-							msg = _S("ins:") + make_string(atom.insert_data) + _S(" ") + make_string(atom__.insert_data) + _S("\n");
-							msg += _S("con:") + make_string(atom.connect_data) + _S(" ") + make_string(atom__.connect_data);
 							PRINT_MESSAGE(msg);
 						}
 
@@ -1171,9 +1380,9 @@ namespace molkern
 			{
 				real_t coul_evarage = (real_t) (pairs_count ? coul_energy / pairs_count : 0.);
 				std::string msg
-					= make_string("  U/coul   / (%5d) : %12.5le", pairs_count, (float)coul_energy)
-					+ make_string("   <U> : %12.5le", (float)coul_evarage)
-					+ make_string("   <maxU> : %12.5le", (float)max_coul_energy);
+					= make_string("  U/coul   / (%10d) : %10.3e", pairs_count, (float)coul_energy)
+					+ make_string("   <U> : %10.3e", (float)coul_evarage)
+					+ make_string("   <maxU> : %10.3e", (float)max_coul_energy);
 
 				PRINT_MESSAGE(msg);
 			}
@@ -1183,9 +1392,9 @@ namespace molkern
 			{
 				real_t vdw_evarage = (real_t) (pairs_count ? vdw_energy / pairs_count : 0.);
 				std::string msg
-					= make_string("  U/vdw    / (%5d) : %12.5e", pairs_count, (float)vdw_energy)
-					+ make_string("   <U> : %12.5e", (float)vdw_evarage)
-					+ make_string("   <maxU> : %12.5e", (float)max_vdw_energy);
+					= make_string("  U/vdw    / (%10d) : %10.3e", pairs_count, (float)vdw_energy)
+					+ make_string("   <U> : %10.3e", (float)vdw_evarage)
+					+ make_string("   <maxU> : %10.3e", (float)max_vdw_energy);
 				PRINT_MESSAGE(msg);
 			}
 		#endif

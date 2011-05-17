@@ -87,6 +87,15 @@ namespace molkern
 		typedef _Base::residue_type  residue_type;
 
 		Residome_() {}
+
+		/*
+		 * Строка, передаваемая как регулярное выражение читается так. Найти любую строку, которая
+		 * состоит из любых символов (.), которые повторяются любое число раз (*) и при этом поиск
+		 * делается "нежадным" (*?), то есть до минимального, а не максимальног совпадения.
+		 * Далее в строке должна встретиться точка (\.) и выражение (lib), в конце строки ($).
+		 * Дублирование \\ появляется из-за того, что язык С требует дополнительного слеша, чтобы
+		 * ввести слеш в строке.
+		 */
 		Residome_(const std::string &dirname, const std::string &fileregex=_S(".*?\\.lib$"))
 		{ load_dir(dirname, fileregex); }
 
@@ -264,7 +273,7 @@ namespace molkern
 		for (; it!=ite; ++it)
 		{
 			filename = *it;
-			if (regex.match(filename))
+			if (regex.is_match(filename))
 			{
 				filename = _Base::dirname_ + filename;
 				load(filename.c_str());

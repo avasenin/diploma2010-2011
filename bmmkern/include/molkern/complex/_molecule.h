@@ -52,7 +52,7 @@ namespace molkern
 
 		enum { dimension = 3 };
 		typedef real_t  real_type;
-
+                typedef _Archetype archetype_type;
 		Molecule_(const _Archetype *archetype, unsigned freedom_type)
 		: archetype_(archetype), freedom_type_(freedom_type), calc_type_(CALC_NOTHING_)
 		{
@@ -135,7 +135,9 @@ namespace molkern
 		/// текущее число степеней движения молекулы
 		unsigned count(_I2T<FREEDOM_>) const { return archetype_->count(FREEDOM, freedom_type_); }
 
-		template <typename _Atom> unsigned read(_I2T<POSITION_>, const real_t *x, _Atom *atoms) const
+                template <typename _Atom> unsigned read(_I2T<CHARGE_>, const real_t *x, _Atom *atoms) const
+                { return archetype_->read(CHARGE, x,    atoms); }
+                template <typename _Atom> unsigned read(_I2T<POSITION_>, const real_t *x, _Atom *atoms) const
 		{ return archetype_->read(POSITION, x, freedom_type_, atoms); }
 
 		template <typename _Atom> unsigned write(_I2T<GRADIENT_>, real_t *g, const _Atom *atoms) const
@@ -161,6 +163,7 @@ namespace molkern
 		*  Примечание: molecule является не указателем, а объектом.
 		*/
 		const _Archetype *operator->() const { return archetype_; }
+                const _Archetype *archetype() const { return archetype_; }
 
 	};
 
@@ -205,6 +208,16 @@ namespace molkern
 
 		if (calc_type_ & CALC_PAIR14_) energy += archetype_->U(PAIR14, atoms, &free_pair14s_[0],
 					&free_pair14s_[0] + free_pair14s_count_, make_print);
+
+		unsigned freedom_count = count(FREEDOM);
+		if (make_print)
+		{
+			real_t average = (real_t) (freedom_count ? energy / freedom_count : 0.);
+			std::string msg
+				= make_string("  U/total  / (%10d) : %10.3e", freedom_count, (float)energy)
+				+ make_string("   <U> : %10.3e", (float)average);
+			PRINT_MESSAGE(msg);
+		}
 
 		return energy;
 	}

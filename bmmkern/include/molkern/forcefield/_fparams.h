@@ -42,7 +42,7 @@ namespace molkern
 		typedef ffindex1 index_type;
 		fstring name; // atom name (to efficient search)
 		real_t mass; // effective mass of atom
-		real_t polar; // atomic polarizability
+		real_t polar; // atomic polarizability (какая размерность ????)
 	};
 
 	/**
@@ -137,7 +137,7 @@ namespace molkern
 
 		::strncpy(buff__, &buffer[3], 10); buff__[10] = 0; // mass
 			// inconsistence here ^^^  with format description
-		param.mass = (real_t)atof(buff__);
+		param.mass = IntMass((real_t)atof(buff__));
 
 		int nuclear = find_nuclear(_I2T<MASS_>(), param.mass);
 		if (gaff_forcefield) { param.name = to_lower(nuclears[nuclear].name); }
@@ -185,7 +185,7 @@ namespace molkern
 	#endif
 
 		::strncpy(buff__, &buffer[22], 9); buff__[9] = 0; // well depth (kcal/mol)
-		param.eps = (real_t)atof(buff__) * CAL2AUE;
+		param.eps = (real_t)atof(buff__) * CAL2J;
 
 		return CODE_SUCCESS;
 	}
@@ -259,7 +259,7 @@ namespace molkern
 
 		::strncpy(buff__, &buffer[5], 10); buff__[10] = 0;
 			// harmonic force constant (kcal/(mol*A^2))
-		param.ke = (real_t)atof(buff__) * CAL2AUE;
+		param.ke = (real_t)atof(buff__) * CAL2J;
 
 		::strncpy(buff__, &buffer[15], 10); buff__[10] = 0;
 			// equilibrium bond length for the above bond in angstroms
@@ -303,7 +303,7 @@ namespace molkern
 
 		::strncpy(buff__, &buffer[8], 10); buff__[10] = 0;
 			// harmonic force constant (kcal/(mol*rad^2))
-		param.ke = (real_t)atof(buff__) * CAL2AUE;
+		param.ke = (real_t)atof(buff__) * CAL2J;
 
 		::strncpy(buff__, &buffer[18], 10); buff__[10] = 0;
 			// equilibrium bond length for the above bond in rad
@@ -353,7 +353,7 @@ namespace molkern
 		param.nb = (int)floor(atof(buff__));
 		::strncpy(buff__, &buffer[15], 15); buff__[15] = 0;
 			// The barrier height divided by a factor of 2.
-		param.v[0] = (real_t)atof(buff__) * CAL2AUE / abs(param.nb);
+		param.v[0] = (real_t)atof(buff__) * CAL2J / abs(param.nb);
 		::strncpy(buff__, &buffer[30], 15); buff__[15] = 0;
 			// The phase shift angle in the torsional function (degrees).
 		param.phi[0] = (real_t)(atof(buff__) * DEG2RAD);
@@ -386,7 +386,7 @@ namespace molkern
 			param.nb = (int)floor(atof(buff__));
 			::strncpy(buff__, &buffer[15], 15); buff__[15] = 0;
 				// The barrier height divided by a factor of 2.
-			param.v[param.curf] = (real_t)atof(buff__) * CAL2AUE / abs(param.nb);
+			param.v[param.curf] = (real_t)atof(buff__) * CAL2J / abs(param.nb);
 			::strncpy(buff__, &buffer[30], 15); buff__[15] = 0;
 				// The phase shift angle in the torsional function (degrees).
 			param.phi[param.curf] = (real_t)(atof(buff__) * DEG2RAD);

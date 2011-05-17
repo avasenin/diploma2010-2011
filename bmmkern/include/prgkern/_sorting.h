@@ -17,38 +17,54 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
-#include "prgkern/_prgconfig.h"
+#ifndef _SORTING__F9ED1116_D518_53ef_5E7E_DE43FDAB0911__H
+#define _SORTING__F9ED1116_D518_53ef_5E7E_DE43FDAB0911__H
 
+#include <queue>
+
+#include "prgkern/_prgconfig.h"
 #include "prgkern/_assert.h"
-#include "prgkern/_average.h"
-#include "prgkern/_blas1.h"
-#include "prgkern/_box.h"
-#include "prgkern/_debug.h"
-#include "prgkern/_dense.h"
-#include "prgkern/_for.h"
-#include "prgkern/_fstring.h"
-#include "prgkern/_graph.h"
-#include "prgkern/_index.h"
-#include "prgkern/_iterator.h"
-#include "prgkern/_math.h"
-#include "prgkern/_m3x3dense.h"
-#include "prgkern/_mdense.h"
-#include "prgkern/_mesh.h"
-#include "prgkern/_minimize.h"
-#include "prgkern/_minimize_lbfgs.h"
-#include "prgkern/_minimize_round.h"
-#include "prgkern/_os.h"
-#include "prgkern/_pproc.h"
-#include "prgkern/_random.h"
-#include "prgkern/_regex.h"
-#include "prgkern/_rotator.h"
-#include "prgkern/_stencil.h"
-#include "prgkern/_string.h"
-#include "prgkern/_time.h"
-#include "prgkern/_transforms.h"
-#include "prgkern/_type.h"
-#include "prgkern/_v3dense.h"
-#include "prgkern/_vdense.h"
-#include "prgkern/_sse.h"
-#include "prgkern/_ieee754.h"
+
+namespace prgkern
+{
+	// __sync_fetch_and_add( &global_int, 1 );
+
+
+	template <unsigned N, typename T>
+	void radix_sorting(unsigned n, T *out, const T *in)
+	{
+		unsigned mask = 0x0001;
+		std::queue<T> queue0, queue1;
+		for (unsigned i=0; i<n; i++)
+		{
+			if (in[i] & mask) queue1.push(in[i]); else queue0.push(in[i]);
+		}
+
+		for (unsigned iter=1; iter<N; iter++)
+		{
+			mask <<= 1;
+			unsigned n0 = queue0.size();
+			unsigned n1 = queue1.size();
+			for (unsigned i=0; i<n0; i++)
+			{
+				T s = queue0.front(); queue0.pop();
+				if (s & mask) queue1.push(s); else queue0.push(s);
+			}
+			for (unsigned i=0; i<n1; i++)
+			{
+				T s = queue1.front(); queue1.pop();
+				if (s & mask) queue1.push(s); else queue0.push(s);
+			}
+		}
+
+		for (unsigned i=0; i<n; i++)
+		{
+			while (!queue0.empty()) { *out++ = queue0.front(); queue0.pop(); }
+			while (!queue1.empty()) { *out++ = queue1.front(); queue1.pop(); }
+		}
+	}
+
+
+}
+#endif
 

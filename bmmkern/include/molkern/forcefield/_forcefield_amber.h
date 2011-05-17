@@ -84,7 +84,7 @@ namespace molkern
 				_Base::_ParamS &symb_param = _Base::symb_params_[i].second;
 				mass = symb_param.mass;
 
-				if (fabs(mass - prev_mass) > 0.5)
+				if (fabs(mass - prev_mass) > IntMass(0.5))
 				{
 					if (node_param.n > 1) // skip atoms without equivalents
 					{

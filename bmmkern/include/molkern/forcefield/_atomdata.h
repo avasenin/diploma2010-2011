@@ -92,76 +92,45 @@ namespace molkern
 	{
 		//______________________________SHARE FIELDS_______________________________
 
-		/// atom forcefield type name
-		fstring fftype;
-			// atom forcefield name is defined by forcefield
-			// for example, atom carbon has name CT (AMBER) or ca (GAFF)
+		fstring fftype; // имя типа атома, как оно определяется силовым полем
+			// например, большими буквами CT для AMBER или малыми ca для GAFF
+		fstring name; // имя атома (C, O, H, .. etc.)
+		int sid; // Self IDent сериальный номер (предполагается, что он целого типа)
 
-		/// atom name (C, O, H, .. etc.)
-		fstring name;
+		vector_t X; // [angstrom] начальные координаты атома (не изменяются)
+		vector_t V; // [angstrom / ps] скорости атомов (они храняться в BMM формате)
+		real_t charge; // заряд во внутреннем представлении
 
-		/// Self IDent or serial number (for HIN, PDB, ... format)
-		int sid;
-			// this field may be string but the PDB, HIN .. suppose the integer type
-
-		/// cartesian coordinates of atom
-		vector_t X; // [angstrom]
-			// these values are loaded from file and aren't changed
-			// these can be used for restore start atom positions
-
-		/// скорости атомов (они храняться в BMM формате)
-		vector_t V; // [angstrom / ps]
-
-		/// charge of atom
-		real_t charge;
-
-		/// van der Waals radius of atom
-		union { real_t radius; real_t sigma; };
+		union { real_t radius; real_t sigma; }; // ван дер Ваальсовы параметры
 		real_t eps;
 
-		/// mass of atom
-		real_t mass;
-
-		/// заряд ядра
-		unsigned nuclear;
-
+		real_t mass; // масса во внутреннем представлении
+		unsigned nuclear; // заряд ядра
 		//..............................SHARE FIELDS...............................
 
 		//__________________________HIN FORMAT FIELDS______________________________
 		/// max bond (neighbour) of atoms = 6
 		static const int max_bond = MAX_ATOM_BOND;
 
-		/// number of bonds (neighbour)
-		unsigned nbond; // used for HIN format only
+//	private:
 
+		unsigned nbond; /// число связей (для HIN формата)
 		int nid[max_bond]; /// абсолютный идентификатор соседа
-		int rnid[max_bond]; /// относительный идентификатор соседа
-			// относительный идентификатор для удобства работы с bmm файлами
+		int rnid[max_bond]; /// относительный идентификатор соседа (для bmm формата)
+		char nvalency[max_bond]; /// валентность связи
 
-		/// neighbour atom bond valency
-		char nvalency[max_bond];
+	public:
 
+		friend void make_bond(Atomdata_ *patomdata, unsigned atom, unsigned atom__, char valency);
 		//..........................HIN FORMAT FIELDS..............................
 
 		//__________________________PDB FORMAT FIELDS______________________________
 
-		/// PDB atom name (for example, "HD12")
-		fstring pdb_name;
-			// "HD12" isn't atom name or type name
-			// it's atom identifier in given residue
-
-		/// identifier of alternative atom location (' ', 'A', 'B')
-		char altloc;
-
-		/// residue or some atom group name ("HIS", "Zn+", "UNK" etc.)
-		std::string residue;
-
-		/// identifier of protein chain ("A", "B")
-		char chain;
-
-		/// residue sequence number
-		int res_seq;
-
+		fstring pdb_name; // PDB топологическое имя атома в аминокислотных остатках
+		char altloc; // идентификатор альтернативной локации атома (' ', 'A', 'B')
+		std::string residue; // имя аминокислотного остатка
+		char chain; // имя белковой цепи ("A", "B")
+		int res_seq; // сериальный номер аминокислотного остатка
 		//..........................PDB FORMAT FIELDS..............................
 
 		unsigned_t connect_data; // упакованная таблица коннектов от 1-1 до 1-4
@@ -192,6 +161,22 @@ namespace molkern
 		}
 	};
 
+	inline void make_bond(Atomdata_ *patomdata, unsigned atom, unsigned atom__, char bondtype='s')
+	{
+		Atomdata_ &atomdata = patomdata[atom];
+		Atomdata_ &atomdata__ = patomdata[atom__];
+
+		atomdata.nid[atomdata.nbond] = atom__;
+		atomdata.rnid[atomdata.nbond] = atom__ - atom;
+		atomdata.nvalency[atomdata.nbond] = bondtype;
+		atomdata.nbond++;
+
+		atomdata__.nid[atomdata__.nbond] = atom;
+		atomdata__.rnid[atomdata__.nbond] = atom - atom__;
+		atomdata__.nvalency[atomdata__.nbond] = bondtype;
+		atomdata__.nbond++;
+	}
+
 	/**
 	* @brief convert atomdata into string
 	* @note conversion is used for testing
@@ -204,7 +189,7 @@ namespace molkern
 		for (unsigned i=1; i<atomdata.nbond; i++)
 		{
 			nids += _S(",") + _S(itoa(atomdata.rnid[i]));
-			}
+		}
 		nids += _S("]");
 
 		char line[256];
@@ -224,8 +209,8 @@ namespace molkern
 
 		::sprintf(line, format, atomdata.sid, pdb_name__.c_str(), fftype__.c_str(),
 			residue__.c_str(), atomdata.chain, atomdata.res_seq,
-			(real_t)atomdata.X[0], (real_t)atomdata.X[1], (real_t)atomdata.X[2],
-			(real_t)atomdata.charge, atomdata.nbond);
+			(float)atomdata.X[0], (float)atomdata.X[1], (float)atomdata.X[2],
+			(float)ExtCharge(atomdata.charge), atomdata.nbond);
 
 		return _S(line) + nids;
 	}
@@ -246,13 +231,13 @@ namespace molkern
 		// при этом не гарантируем точного восстановления номеров, хотя гарантируем
 		// точность восстановления топологии связей
 
-		::sprintf(line, format, atomdata.sid + 1, name__.c_str(), type__.c_str(),
-			(real_t)atomdata.charge, (real_t)atomdata.X[0], (real_t)atomdata.X[1],
-			(real_t)atomdata.X[2], atomdata.nbond);
+		::sprintf(line, format, atomdata.sid, name__.c_str(), type__.c_str(),
+			(float)ExtCharge(atomdata.charge),
+			(float)atomdata.X[0], (float)atomdata.X[1], (float)atomdata.X[2], atomdata.nbond);
 
 		std::string msg = _S(line);
 		for (unsigned i=0; i<atomdata.nbond; i++)
-			msg += itoa(atomdata.nid[i] + 1) + _S(" ") + ctoa(atomdata.nvalency[i]) + _S(" ");
+			msg += make_string("%d %c ", atomdata.nid[i], atomdata.nvalency[i]);
 
 		return msg;
 	}
@@ -315,8 +300,11 @@ namespace molkern
 		*src >> atomdata.sid >> skip;
 		*src >> name; atomdata.name = name;
 		*src >> name; atomdata.fftype = name;
+
 		*src >> skip >> atomdata.charge
 			>> atomdata.X[0] >> atomdata.X[1] >> atomdata.X[2];
+		atomdata.charge = IntCharge(atomdata.charge);
+
 		*src >> atomdata.nbond;
 		for (unsigned i=0; i<atomdata.nbond; i++)
 			*src >> atomdata.nid[i] >> atomdata.nvalency[i];
@@ -344,7 +332,9 @@ namespace molkern
 		*src >> name; atomdata.fftype = name;
 		*src >> atomdata.res_seq;
 		*src >> name; atomdata.residue = name;
+
 		*src >> atomdata.charge;
+		atomdata.charge = IntCharge(atomdata.charge);
 
 		return CODE_SUCCESS;
 	}
@@ -433,10 +423,12 @@ namespace molkern
 	* @param src бинарный файл
 	* @param atomdata атомныйе данные
 	*/
-	inline int extract_object(_I2T<FORMAT_BMM_>, Atomdata_ &atomdata, std::ifstream *src)
+	inline int extract_object(_I2T<FORMAT_BMM_>, Atomdata_ *patomdata, unsigned i,
+		std::ifstream *src)
 	{
-		char buffer[BMM_RECORD_LEN];
+		Atomdata_ &atomdata = patomdata[i];
 
+		char buffer[BMM_RECORD_LEN];
 		src->read(buffer, BMM_RECORD_LEN);
 		if (src->eof()) return CODE_EOF;
 
@@ -444,15 +436,24 @@ namespace molkern
 		atomdata.fftype = fftypes[atom & 0x000000FF];
 		atom >>= 8;
 
-		atomdata.nbond = atom & 0x00000007;
+//		atomdata.nbond = atom & 0x00000007;
+//		atom >>= 3;
+//		for (unsigned i=0; i<atomdata.nbond; i++)
+//		{
+//			atomdata.rnid[i] = atom & 0x0000001F;
+//			atom >>= 5;
+//		}
+
+		unsigned nbond = atom & 0x00000007;
 		atom >>= 3;
-		for (unsigned i=0; i<atomdata.nbond; i++)
+		for (unsigned i=0; i<nbond; i++)
 		{
-			atomdata.rnid[i] = atom & 0x0000001F;
+			unsigned rnid = atom & 0x0000001F;
+			make_bond(patomdata, i, i + rnid, 's');
 			atom >>= 5;
 		}
 
-		atomdata.charge = (real_t)(*(signed16_t*)&buffer[4]) / BMM_QGRID_STEP;
+		atomdata.charge = IntCharge((real_t)(*(signed16_t*)&buffer[4]) / BMM_QGRID_STEP);
 		atomdata.X[0] = (real_t)(*(signed16_t*)&buffer [6]) / BMM_XGRID_STEP;
 		atomdata.V[0] = (real_t)(*(signed16_t*)&buffer [8]) / BMM_VGRID_STEP;
 		atomdata.X[1] = (real_t)(*(signed16_t*)&buffer[10]) / BMM_XGRID_STEP;

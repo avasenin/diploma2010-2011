@@ -1,1 +1,0 @@
-gcc -O3 -mfpmath=sse -finline-limit=5000 -fno-strict-aliasing  -msse2 -lboost_filesystem -lboost_program_options -lboost_regex -lboost_thread -I/home/avasenin/diplom/bmmkern/include __moldefs.cpp bmmkern.cpp -obmmkern.exe

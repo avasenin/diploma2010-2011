@@ -19,7 +19,9 @@
  ***************************************************************************/
 #ifndef _ITERATOR__F9ED1116_5C6E_5fd6_C36C_114687FB0400__H
 #define _ITERATOR__F9ED1116_5C6E_5fd6_C36C_114687FB0400__H
+
 #include "prgkern/_prgconfig.h"
+#include "prgkern/_index.h"
 
 namespace prgkern
 {
@@ -47,6 +49,45 @@ namespace prgkern
 	};
 	typedef range_iterator_<int>  range_iterator;
 	typedef range_iterator_<unsigned>  urange_iterator;
+
+	/*
+	 * Специализация range_iterator для прохода прямоугольных областей произвольной размерности
+	 */
+	template <unsigned N, typename T>
+	class range_iterator_<index_<N, T> >
+	{
+		index_<N, T> maxpos_;    // максимально допустимые индексы по направлениям
+		index_<N, T> pos_;       // текущие индексы по направлениям
+
+	public:
+
+    range_iterator_(const index_<N, T> &maxpos, const index_<N, T> &pos=0)
+    : maxpos_(maxpos), pos_(pos) {}
+
+		range_iterator_(const range_iterator_ &t) : maxpos_(t.maxpos_), pos_(t.pos_) {}
+
+		range_iterator_ &operator=(const range_iterator_ &t)
+		{ maxpos_ = t.maxpos_; pos_ = t.pos_; return *this; }
+
+		index_<N, T> operator*() const { return pos_; }
+		index_<N, T> &operator*() { return pos_; }
+
+		range_iterator_ &operator++()
+		{
+			pos_ = increment(maxpos_, pos_);
+			return *this;
+		}
+
+		bool operator==(const range_iterator_ &t) const
+		{
+			return pos_ == t.pos_;
+		}
+
+		bool operator!=(const range_iterator_ &t) const
+		{
+			return !(*this == t);
+		}
+	};
 
 	/**
 	*  Итератор, проходящий любое подмножество заданного std::vector<>

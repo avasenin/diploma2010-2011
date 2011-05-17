@@ -23,6 +23,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/lexical_cast.hpp>
 #define ba boost::algorithm
 
 #include "prgkern/_prgconfig.h"
@@ -53,6 +54,13 @@ namespace prgkern
 		COUT_MUTEX_LOCK \
 		std::cout << msg << std::endl; \
 		COUT_MUTEX_UNLOCK \
+	}
+
+	#define PRINT(msg) \
+	{ \
+	  COUT_MUTEX_LOCK \
+	  std::cout << msg; \
+	  COUT_MUTEX_UNLOCK \
 	}
 
 	#define PRINT_ERR(msg) \
@@ -156,6 +164,30 @@ namespace prgkern
 		return std::string(line);
 	}
 
+	template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7>
+	INLINE std::string make_string(const char *format, T1 v1, T2 v2, T3 v3, T4 v4, T5 v5, T6 v6, T7 v7)
+	{
+		char line[1200];
+		::sprintf(line, format, v1, v2, v3, v4, v5, v6, v7);
+		return std::string(line);
+	}
+
+	template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8>
+	INLINE std::string make_string(const char *format, T1 v1, T2 v2, T3 v3, T4 v4, T5 v5, T6 v6, T7 v7, T8 v8)
+	{
+		char line[1200];
+		::sprintf(line, format, v1, v2, v3, v4, v5, v6, v7, v8);
+		return std::string(line);
+	}
+
+	template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8, typename T9>
+	INLINE std::string make_string(const char *format, T1 v1, T2 v2, T3 v3, T4 v4, T5 v5, T6 v6, T7 v7, T8 v8, T9 v9)
+	{
+		char line[1200];
+		::sprintf(line, format, v1, v2, v3, v4, v5, v6, v7, v8, v9);
+		return std::string(line);
+	}
+
 	INLINE std::string make_string(const char *s) { return std::string(s); }
 	INLINE std::string make_string(const std::string &s) { return s; }
 	INLINE std::string make_string(bool s) { return s ? _S("true"): _S("false"); }
@@ -201,6 +233,15 @@ namespace prgkern
 	INLINE std::string ptoa(void *v)  { return make_string(v); }
 	INLINE std::string ctoa(char v)   { return std::string(1, v); }
 
+	template <typename T>
+	T make_value(const std::string &s) { return boost::lexical_cast<T>(s); }
+
+	template <typename T, typename Iterator>
+	T make_value(Iterator from, Iterator to) { return boost::lexical_cast<T>(std::string(from, to)); }
+
+	template <typename Iterator>
+	std::string make_value(Iterator from, Iterator to) { return std::string(from, to); }
+
 	//--------------------------------------------------------------------------
 	// When parsing the input from a user, strings usually have unwanted leading
 	// or trailing characters. To get rid of them, we need trim functions.
@@ -216,7 +257,6 @@ namespace prgkern
 	{ ba::trim_if(s, ba::is_any_of(subs)); }
 	INLINE std::string trim(const std::string &s, const char *subs)
 	{ return ba::trim_copy_if(s, ba::is_any_of(subs)); }
-
 
 	//--------------------------------------------------------------------------
 	// STL has a nice way of converting character case. Unfortunately, it works

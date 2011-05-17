@@ -20,14 +20,14 @@ namespace molkern
 	real_t Interaction_<C612>::rcutoff_;
 	real_t Interaction_<E612>::alpha_;
 
-	model_time_t global_model_time; // счетчик шагов динамики (текущее время динамики)
-		// счетчик срабатывает каждую фемтосекунду динамики, это значит, что
-		// время динамики есть число в счетике * 1 fs
-		// в текущей реализации предельное время динамики 4 ms
+	model_timer_t global_model_time;     // счетчик времени динамики
+	system_time_t global_start_time;     // физическое время старта динамики [sec]
 
 	real_t global_rskin_width;
 	real_t global_compress_factor;
 
 	unsigned global_thread_count; // число запущенных процессов
-	long long unsigned global_pair=0;
+	RappleGoddardParams* RappleGoddardParams::s_instance = NULL;
+	CoulombParams* CoulombParams::s_instance = NULL;
+
 };

@@ -2,7 +2,10 @@
 #define _THERMOSTAT__F9ED1116_EDB9_5e17_25FF_F745B15D0100__H
 
 #include "molkern/__moldefs.h"
+#include "molkern/__config.h"
 #include "molkern/complex/_ensemble.h"
+#include "molkern/complex/_geom_tool.h"
+
 
 namespace molkern
 {
@@ -29,7 +32,7 @@ namespace molkern
 		* @param temperature температура (K)
 		*/
 		explicit maxwell_distribution_(_Real mass, _Real temperature)
-		: _Base(_Distribution(sqrt(KT(temperature)/(mass)))),
+		: _Base(_Distribution(sqrt(KT(temperature)/mass))),
 			temperature_(temperature), mass_(mass) {}
 
 		_Real temperature() const { return temperature_; }
@@ -75,7 +78,8 @@ namespace molkern
 		*/
 		_Real generate(_Real mass)
 		{
-			unsigned key = unsigned(mass);
+			unsigned key = unsigned(ExtMass(mass));
+				// ключ не может работать правильно для внутренних масс
 
 			typename _Ensemble::iterator it = ensemble_.find(key);
 			if (it == ensemble_.end())
@@ -93,7 +97,7 @@ namespace molkern
 		*/
 		void generate(_Real mass, unsigned n, _Real *ranv)
 		{
-			unsigned key = unsigned(mass);
+			unsigned key = unsigned(ExtMass(mass));
 
 			typename _Ensemble::iterator it = ensemble_.find(key);
 			if (it == ensemble_.end())
@@ -122,103 +126,51 @@ namespace molkern
 	* @param molecule указатель на молекулу или комплекс молекул
 	* @param temperature температура [K]
 	*/
-	template <typename _Molecule, typename _Iterator>
-	INLINE void set(_I2T<TEMPERATURE_>, real_t temperature,
-		_Molecule *molecule, _Iterator start, _Iterator end)
+	template <typename _System>
+	INLINE void set(_I2T<TEMPERATURE_>, real_t temperature, _System *system)
 	{
-		typedef typename _Molecule::atom_type     _Atom;
-		typedef array_iterator<_Atom, _Iterator>  iterator;
+		typedef typename _System::atom_type            _Atom;
+		typedef array_iterator<_Atom, range_iterator>  _Iterator;
 
 		maxwell_distribution_ensemble emsemble(temperature);
+		unsigned N = system->count(ATOM);
 
-		iterator it = molecule->make_iterator(start);
-		iterator ite = molecule->make_iterator(end);
+		_Iterator it = system->make_iterator(range_iterator(0));
+		_Iterator ite = system->make_iterator(range_iterator(N));
 		for (; it!=ite; ++it)
 		{
 			emsemble.generate((*it).atomdata->mass, 3, &(*it).V[0]);
+				// корректно, для внутренних масс
 		}
 	}
 
-	/**
-	*  Расчет текущей температуры объекта в предположении максвеловского
-	*  распределения.
-	*  Степени свободы всей системы как целое игнорируются.
-	* @param molecule указатель на молекулу или комплекс молекул
-	* @return температура [K]
-	*/
-	template <typename _Molecule>
-	INLINE real_t get(_I2T<TEMPERATURE_>, _Molecule *molecule)
+	/*
+	 *  Удаление движения центра масс у всей системы в целом
+	 */
+	template <typename _System>
+	INLINE void remove(_I2T<IMPULSE_>, _System *system)
 	{
-		typedef typename _Molecule::atom_type          _Atom;
+		typedef typename _System::atom_type            _Atom;
 		typedef array_iterator<_Atom, range_iterator>  _Iterator;
 
-		_E(real_t) kenergy = 0.;
-		unsigned atom_count = molecule->count(ATOM);
-
-		_Iterator it = molecule->make_iterator(range_iterator(0));
-		_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
-		for (; it!=ite; ++it)
-		{
-			const _Atom &atom = *it;
-			kenergy += atom->mass * scalar_product(atom.V, atom.V);
-		}
-		kenergy /= 3 * atom_count;
-		return Temperature((real_t)kenergy);
-	}
-
-	// удаление движения центра масс
-	template <typename _Molecule>
-	INLINE void remove(_I2T<IMPULSE_>, _Molecule *molecule)
-	{
-		typedef typename _Molecule::atom_type          _Atom;
-		typedef array_iterator<_Atom, range_iterator>  _Iterator;
-
-		unsigned atom_count = molecule->count(ATOM);
+		unsigned N = system->count(ATOM);
 		vector_t V = 0; real_t mass = 0.;
-		_Iterator it = molecule->make_iterator(range_iterator(0));
-		_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
+		_Iterator it = system->make_iterator(range_iterator(0));
+		_Iterator ite = system->make_iterator(range_iterator(N));
 		for (; it!=ite; ++it)
 		{
 			const _Atom &atom = *it;
 			mass += atom->mass;
 			V += atom.V * atom->mass;
 		}
-
 		V *= (1. / mass);
-//		{
-//			_S msg = make_string("Deleting the mass center velocity [%10.7e %10.7e %10.7e]", V[0], V[1], V[2]);
-//			PRINT_MESSAGE(msg);
-//		}
 
-		it = molecule->make_iterator(range_iterator(0));
+		it = system->make_iterator(range_iterator(0));
 		for (; it!=ite; ++it)
 		{
 			_Atom &atom = *it;
 			atom.V -= V;
 		}
-	}
-
-	template <typename _Molecule>
-	INLINE real_t get(_I2T<PRESSURE_>, _Molecule *molecule)
-	{
-		typedef typename _Molecule::atom_type          _Atom;
-		typedef array_iterator<_Atom, range_iterator>  _Iterator;
-
-		_E(real_t) kenergy = 0.;
-		_E(real_t) virial = 0.;
-
-		unsigned atom_count = molecule->count(ATOM);
-		_Iterator it = molecule->make_iterator(range_iterator(0));
-		_Iterator ite = molecule->make_iterator(range_iterator(atom_count));
-		for (; it!=ite; ++it)
-		{
-			const _Atom &atom = *it;
-			kenergy += atom->mass * scalar_product(atom.V, atom.V);
-			virial += scalar_product(atom.X, atom.F);
-		}
-
-		box_t box = molecule->get(BOX);
-		return (real_t) (ATMOSPHERE_FACTOR * (kenergy + virial) / (3 * box.volume()));
 	}
 
 	/**
@@ -230,65 +182,133 @@ namespace molkern
 	*  (2) определение текущих термодинамических параметров (температура, ..)
 	*  (3) поддержание (масштабирование) термодинамических параметров
 	*/
-	class Thermostat
+	template <typename _Ensemble, typename _System>
+	class Thermostat_ : public notified_object_
 	{
-		typedef Descriptor_<THERMOSTATE_>  _Descriptor;
+		mutable _Ensemble *ensemble_;      // микроансамбль для "мгновенного" усреднения
+		mutable _System *system_;          // система, с которой общается термостат
+		_S ensemble_type_;       // тип ансамбля
+		real_t targetP_;         // целевое давление
+		real_t targetT_;         // целевая температура
+		real_t targetE_;         // целевая энергия
 
-		_Descriptor param_; // все параметры термостата
-		void *ensemble_; // текущий термодинамический ансамбль
+		/*
+		 * Термодинамические свойства системы (например, коэффициенты передачи тепла и давления)
+		 * правильней было бы разместить в классе COMPLEX, но я не хочу его перегружать термодинамикой.
+		 */
+		real_t couplingT_coef_;
+		real_t couplingP_coef_;
+
+		real_t integration_time_;
+		real_t relaxation_time_;
+
+		virtual void process_notification()
+		{
+			notified_object_::process_notification();
+
+			/*
+			 *  Cкалирование при каждом уведомлении. При малом числе циклов динамики скалирование
+			 *  делаем по предельному варианту, то есть точное, чтобы адаптировать систему от клешей.
+			 *  Далее скалируем ее термодинамическим образом, через постепенную релаксацию.
+			 */
+			if (counter_ < 100) scaling_(direct_scalingT_coef_(), 1.);
+			else scaling();
+		}
 
 	public:
 
-		typedef _Descriptor  descriptor_type;
-
-		template <typename _Molecule>
-		Thermostat(const Descriptor_<THERMOSTATE_> &desc, _Molecule *molecule)
-		: param_(desc), ensemble_(0)
+		Thermostat_(const Configure *conf, _Ensemble *ensemble, _System *system)
+		: notified_object_  (1)
+		, ensemble_         (ensemble)
+		, system_           (system)
+		, couplingT_coef_   (conf->couplingT_coef)
+		, couplingP_coef_   (conf->couplingP_coef)
+		, integration_time_ (conf->integration_time)
+		, relaxation_time_  (conf->relaxation_time)
 		{
-			unsigned count = molecule->count(ATOM);
-			set(TEMPERATURE, desc.temperature, molecule, range_iterator(0), range_iterator(count));
-				// приведем в контакт с термостатом и нагреем молекулу
-
-		#define NEW(type, param) \
-			ensemble_ = new Ensemble_<type>(param, param_.sampling_time/param_.integration_time + 1); \
-
-			if (param_.ensamble == _S("NVE")) NEW(NVE, molecule->U() + kinetic_energy(molecule));
-				// сосчитаем полную энергию и установим ее как целевую константу
-			if (param_.ensamble == _S("NVT")) NEW(NVT, param_.temperature)
-			if (param_.ensamble == _S("NVP")) NEW(NVP, param_.pressure)
-		#undef NEW
+			Interface_<ENSEMBLE_> interface = conf->get_interface(ENSEMBLE);
+			ensemble_type_ = interface.ensemble_type;
+			targetP_       = interface.pressure;
+			targetT_       = interface.temperature;
+			targetE_       = interface.energy + system->get(POTENT_ENERGY);
+			set(TEMPERATURE, targetT_, system_); // приведем в контакт с термостатом и нагреем молекулу
+			remove(IMPULSE, system_); // удалим случано набранный импульс
 		}
 
-		~Thermostat()
+		void scaling() const
 		{
-		#define DELETE(type) delete (Ensemble_<type>*) ensemble_;
-			if (param_.ensamble == _S("NVE")) DELETE(NVE);
-			if (param_.ensamble == _S("NVT")) DELETE(NVT);
-			if (param_.ensamble == _S("NVP")) DELETE(NVP);
-		#undef DELETE
+			if (ensemble_type_ == _S("NVT"))
+			{
+				scaling_(berendsen_scalingT_coef_(), 1.);
+			}
+			if (ensemble_type_ == _S("NVP"))
+			{
+				scaling_(berendsen_scalingT_coef_(), berendsen_scalingP_coef_());
+			}
 		}
 
-		template <typename _Molecule>
-		void sample_statistics(_Molecule *molecule) const
+		real_t direct_scalingT_coef_() const
 		{
-		#define SAMPLE(type) ((Ensemble_<type>*)ensemble_)->sample_statistics(molecule);
-			if (param_.ensamble == _S("NVE")) SAMPLE(NVE);
-			if (param_.ensamble == _S("NVT")) SAMPLE(NVT);
-			if (param_.ensamble == _S("NVP")) SAMPLE(NVP);
-		#undef MACRO
+			real_t currentT = ensemble_->T_.top();
+			return sqrt(targetT_ / currentT);
 		}
 
-		template <typename _Molecule>
-		std::string scaling(_Molecule *molecule) const
+		real_t berendsen_scalingT_coef_() const
 		{
-		#define SCALING(type) return ((Ensemble_<type>*)ensemble_)->scaling(molecule)
-			if (param_.ensamble == _S("NVE")) SCALING(NVE);
-			if (param_.ensamble == _S("NVT")) SCALING(NVT);
-			if (param_.ensamble == _S("NVP")) SCALING(NVP);
-		#undef SCALING
-			return _S("");
+			real_t currentT = ensemble_->T_.average();
+				// использую среднее по интервалу вместо мгновенного, так как оно менее подвержено скачкам
+
+			real_t lambda = 1. - (integration_time_ * couplingT_coef_ / relaxation_time_ )
+				* (currentT - targetT_) / currentT;
+			if (lambda > 0.) lambda = sqrt(lambda);
+			else lambda = 1.;
+
+			return lambda;
 		}
+
+		real_t berendsen_scalingP_coef_() const
+		{
+			real_t currentP = ensemble_->P_.average();
+				// использую среднее по интервалу вместо мгновенного, так как оно менее подвержено скачкам
+
+			real_t lambda = 1. + (integration_time_ * couplingP_coef_ / relaxation_time_ )
+				* (currentP - targetP_);
+			if (lambda > 0.) lambda = pow(lambda, 1./3);
+			else lambda = 1.;
+
+			return lambda;
+		}
+
+	protected:
+
+		void scaling_(real_t vlambda, real_t xlambda = 1.) const
+		{
+			typedef typename _System::region_type          _Region;
+			typedef typename _System::atom_type            _Atom;
+			typedef array_iterator<_Atom, range_iterator>  _Iterator;
+
+			unsigned N = system_->count(_I2T<ATOM_>());
+			_Iterator it = system_->make_iterator(range_iterator(0));
+			_Iterator ite = system_->make_iterator(range_iterator(N));
+			for (; it!=ite; ++it)
+			{
+				(*it).V *= vlambda;
+				(*it).X *= xlambda;
+			}
+
+			_Region *region = system_->get(REGION);
+			region->rescale(xlambda);
+		}
+
+		void print() const
+		{
+			_S msg = make_string(global_model_time) + _S(" ") + ensemble_->print_statistics()
+				+ make_string(current_time() - global_start_time);
+			PRINT_MESSAGE(msg);
+		}
+
 	};
+	typedef Thermostat_<Ensemble, Complex>  Thermostat;
 
 }
 #endif

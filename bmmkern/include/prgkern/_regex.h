@@ -27,12 +27,74 @@
 namespace prgkern
 {
 
+	class no_match_exception {};
+
 	class RegEx
 	{
 	public:
+
+		typedef std::pair<std::string, std::string>  match_type;
+
 		RegEx(const std::string &mask) : compiled_regex_(mask) {}
-		bool match(const std::string &s)
+
+		/*
+		 * Проверяет наличие заданного образца в строке s
+		 */
+		bool is_match(const std::string &s) const
 		{ return boost::regex_match(s, compiled_regex_); }
+
+		/**
+		 *
+		 * @param results совокупность подстрок, удовлетворящих шаблонам подвыражений
+		 * @param s строка для анализа
+		 * @return
+		 */
+		bool get_match(std::vector<std::string> &results, const std::string &s) const
+		{
+			boost::match_results<std::string::const_iterator> what;
+			if (boost::regex_match(s, what, compiled_regex_))
+			{
+				unsigned cnt = what.size() - 1;
+				results.resize(cnt);
+				for (unsigned i=0; i<cnt; i++) results[i].assign(what[i + 1].first, what[i + 1].second);
+				return true;
+			}
+			return false;
+		}
+
+		std::string get_match(unsigned n, const std::string &s) const
+		{
+			boost::match_results<std::string::const_iterator> what;
+			if (boost::regex_match(s, what, compiled_regex_))
+			{
+				assert(_LE(n, what.size()));
+				return _S(what[n + 1].first, what[n + 1].second);
+			}
+			return _S("");
+		}
+
+		std::string get_match(const std::string &s) const
+		{
+			boost::match_results<std::string::const_iterator> what;
+			if (boost::regex_match(s, what, compiled_regex_))
+			{
+				return _S(what[1].first, what[1].second);
+			}
+			return _S("");
+		}
+
+		std::pair<std::string, std::string> get_match2(const std::string &s) const
+		{
+			typedef std::pair<std::string, std::string> _Pair;
+
+			boost::match_results<std::string::const_iterator> what;
+			if (boost::regex_match(s, what, compiled_regex_))
+			{
+				return _Pair(_S(what[1].first, what[1].second), _S(what[2].first, what[2].second));
+			}
+			return _Pair(_S(""), _S(""));
+		}
+
 	private:
 		boost::regex compiled_regex_;
 	};

@@ -38,16 +38,17 @@ namespace prgkern
 	template <typename S>
 	class Average_ : protected std::vector<S>
 	{
-		typedef std::vector<S> _Base;
-		unsigned pos_;
-		unsigned count_;
+		typedef std::vector<S> _Base; // массив значений величины
+		int pos_; // позиция последней вставки
+		unsigned count_; // количество точек вставленных
+		typename extended<S>::type average_;
 
 	public:
 
 		/**
 		* @param sz число точек по которым происходит усреднение
 		*/
-		Average_(unsigned sz=0) : pos_(sz - 1), count_(0) { _Base::resize(sz); }
+		Average_(unsigned sz=0) : pos_(-1), count_(0), average_(0.) { _Base::resize(sz); }
 
 		/**
 		*  Изменение размера накопителя
@@ -55,8 +56,9 @@ namespace prgkern
 		*/
 		void resize(unsigned sz)
 		{
-			pos_ = sz - 1;
+			pos_ = -1;
 			count_ = 0;
+			average_ = 0.;
 			_Base::resize(sz);
 		}
 
@@ -66,9 +68,12 @@ namespace prgkern
 		const S &top() const
 		{
 			assert(_GT(count_, (unsigned)0));
+			assert(_GE(pos_, (unsigned)0));
 			return _Base::operator[](pos_);
 		}
 
+		/// возврат уже насчитанного среднего значения
+		typename extended<S>::type average() const { return average_; }
 
 		/**
 		* Запомнить еще одно значение.
@@ -76,8 +81,20 @@ namespace prgkern
 		void push(const S &s)
 		{
 			pos_++; pos_ %= _Base::size();
+			if (count_ < _Base::size())
+			{
+				average_ = (average_ * count_ + s) / (count_ + 1);
+				count_++;
+			}
+			else
+			{
+				average_ += (s - _Base::operator[](pos_)) / count_;
+			}
 			_Base::operator[](pos_) = s;
-			if (count_ < _Base::size()) count_++;
+
+//			pos_++; pos_ %= _Base::size();
+//			_Base::operator[](pos_) = s;
+//			if (count_ < _Base::size()) count_++;
 		}
 
 		/**
@@ -92,6 +109,23 @@ namespace prgkern
 			return (S) s;
 		}
 
+		/**
+		* @return среднее значение величины по последним n точкам
+		*/
+		S operator()(unsigned n) const
+		{
+			assert(_LT(n, count_));
+
+			int pos = (int )pos_;
+			typename extended<S>::type s = 0;
+			for (unsigned k=0; k<n; k++)
+			{
+				s += _Base::operator[](pos--);
+				if (pos == -1) pos = count_ - 1;
+			}
+			s *= ((S)1. / n);
+			return (S) s;
+		}
 	};
 
 }

@@ -103,7 +103,8 @@ namespace prgkern
 		directory_iterator() : _base() {}
 
 		/// iterator of extraction of file name
-		std::string operator*() { return (*this)->leaf(); }
+//		std::string operator*() { return (*this)->leaf(); }
+		std::string operator*() { return ((*(_base*)this)->path()).filename();/*.generic_string();*/ }
 
 		/// iterator of moving to next file name (directories will bw skipped)
 		directory_iterator &operator++()

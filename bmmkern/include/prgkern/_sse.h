@@ -20,9 +20,11 @@
 #ifndef _SSE___0077A726_E6E3_58a1_C16D_CE436AB90502__H
 #define _SSE___0077A726_E6E3_58a1_C16D_CE436AB90502__H
 
-#include <math.h>
-#include <xmmintrin.h>
-#include <emmintrin.h>
+#ifdef USE_SSE
+	#include <math.h>
+	#include <xmmintrin.h>
+	#include <emmintrin.h>
+#endif
 #include "prgkern/_debug.h"
 #include "prgkern/_string.h"
 

@@ -19,7 +19,7 @@ namespace molkern
 	public:
 
 		template <typename LPComplex, typename Param>
-		real_t operator()(LPComplex *complex, const Param &param)
+		real_t run(LPComplex *complex, const Param &param)
 		{
 			real_t energy = 0.;
 
@@ -47,6 +47,7 @@ namespace molkern
 		template <typename LPComplex>
 		static real_t dU__dX(unsigned n, const real_t *x, real_t *g, void *param)
 		{
+			PRINT_MESSAGE("BING");
 			typedef typename LPComplex::atom_type _Atom;
 			LPComplex* complex = (LPComplex*)param;
 			_Atom *atoms = complex->get(ATOM);
